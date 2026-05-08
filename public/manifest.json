@@ -2,7 +2,18 @@
   "manifest_version": 3,
   "name": "BwithU",
   "version": "0.1",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
-    "default_popup": "index.html"
+    "default_title": "Toggle BwithU"
   }
 }

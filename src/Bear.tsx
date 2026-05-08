@@ -10,6 +10,9 @@ const colors:any = {
 export default function Bear() {
   return (
     <motion.div
+      drag
+      dragMomentum={false}
+      dragElastic={0.1}
       initial={{ y: -300, scale: 0.5 }}
       animate={{
         y: 0,
@@ -22,8 +25,10 @@ export default function Bear() {
       style={{
         display:"grid",
         gridTemplateColumns:`repeat(10,16px)`,
-        gap:2
+        gap:2,
+        cursor: "grab"
       }}
+      whileDrag={{ cursor: "grabbing" }}
     >
       {bearPixels.join("").split("").map((p,i)=>(
         <motion.div
