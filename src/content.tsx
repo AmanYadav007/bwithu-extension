@@ -1,24 +1,24 @@
 import ReactDOM from "react-dom/client";
+import browser from "webextension-polyfill";
 import App from "./App";
 import "./index.css";
-import browser from "webextension-polyfill";
 
-// Inject BwithU root element
-const root = document.createElement('div');
-root.id = 'bwithu-root';
+const root = document.createElement("div");
+root.id = "bwithu-root";
 document.body.appendChild(root);
 
-// Listen for toggle messages from background script
-if (typeof browser !== 'undefined' && browser.runtime) {
-  browser.runtime.onMessage.addListener((request: any) => {
-    if (request.toggle) {
-      const bwithuRoot = document.getElementById('bwithu-root');
-      if (bwithuRoot) {
-        bwithuRoot.style.display = bwithuRoot.style.display === 'none' ? 'block' : 'none';
-      }
-    }
-  });
-}
+let visible = true;
 
-// Mount React app
+browser.runtime.onMessage.addListener((request: unknown) => {
+  if (
+    request !== null &&
+    typeof request === "object" &&
+    "toggle" in request &&
+    (request as { toggle: boolean }).toggle
+  ) {
+    visible = !visible;
+    root.style.visibility = visible ? "visible" : "hidden";
+  }
+});
+
 ReactDOM.createRoot(root).render(<App />);

@@ -1,9 +1,12 @@
 #bwithu-root {
   position: fixed;
-  bottom: 40px;
-  right: 40px;
-  z-index: 999999;
-  pointer-events: auto;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 2147483647;
+  overflow: hidden;
 }
 
 * {

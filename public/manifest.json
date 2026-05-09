@@ -7,7 +7,8 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "css": ["content.css"]
     }
   ],
   "background": {
@@ -15,5 +16,11 @@
   },
   "action": {
     "default_title": "Toggle BwithU"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.png", "*.svg", "*.css", "*.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
