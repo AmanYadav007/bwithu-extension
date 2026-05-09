@@ -5,36 +5,31 @@ import SpeechBubble from "./SpeechBubble";
 import { animationConfigs, INTRO_TEXT } from "./animationStates";
 import type { BearState } from "./animationStates";
 import { playClickPop } from "./sounds";
+import type { BearPosition, BwithuSettings } from "./storage";
+import { loadBearPosition, saveBearPosition } from "./storage";
 
-const STORAGE_KEY = "bwithu.bearPosition";
 const SIZE = 128;
 const DEFAULT_MARGIN = 40;
-
-interface Position {
-  x: number;
-  y: number;
-}
 
 interface ChromeLike {
   runtime?: {
     getURL?: (filename: string) => string;
-  };
-  storage?: {
-    local?: {
-      get: (key: string) => Promise<Record<string, unknown>>;
-      set: (value: Record<string, unknown>) => Promise<void>;
-    };
   };
 }
 
 interface BearProps {
   state: BearState;
   showIntro: boolean;
+  speechText: string;
+  settings: BwithuSettings;
+  panelOpen: boolean;
   onSpawnComplete: () => void;
   onIntroComplete: () => void;
-  onBlinkComplete: () => void;
-  onWaveComplete: () => void;
+  onLoopComplete: () => void;
   onRequestWave: () => void;
+  onOpenPanel: () => void;
+  onDragReaction: () => void;
+  onHoverReaction: () => void;
 }
 
 function resolveAsset(filename: string): string {
@@ -45,7 +40,7 @@ function resolveAsset(filename: string): string {
   }
 }
 
-function clampPosition(position: Position): Position {
+function clampPosition(position: BearPosition): BearPosition {
   const maxX = Math.max(DEFAULT_MARGIN, window.innerWidth - SIZE - 8);
   const maxY = Math.max(DEFAULT_MARGIN, window.innerHeight - SIZE - 8);
   return {
@@ -54,67 +49,72 @@ function clampPosition(position: Position): Position {
   };
 }
 
-function defaultPosition(): Position {
+function defaultPosition(): BearPosition {
   return {
     x: Math.max(8, window.innerWidth - SIZE - DEFAULT_MARGIN),
     y: Math.max(8, window.innerHeight - SIZE - DEFAULT_MARGIN),
   };
 }
 
-async function loadPosition(): Promise<Position | undefined> {
-  const chromeStorage = (globalThis as { chrome?: ChromeLike }).chrome?.storage?.local;
-
-  try {
-    if (chromeStorage) {
-      const stored = await chromeStorage.get(STORAGE_KEY);
-      return stored[STORAGE_KEY] as Position | undefined;
-    }
-  } catch {
-    // Fall through to localStorage for the Vite preview.
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Position) : undefined;
-  } catch {
-    return undefined;
-  }
+function wanderDelay(intensity: BwithuSettings["wanderIntensity"]) {
+  if (intensity === "calm") return 9000 + Math.random() * 7000;
+  if (intensity === "curious") return 5500 + Math.random() * 5000;
+  return 3200 + Math.random() * 3600;
 }
 
-async function savePosition(position: Position) {
-  const chromeStorage = (globalThis as { chrome?: ChromeLike }).chrome?.storage?.local;
+function wanderDistance(intensity: BwithuSettings["wanderIntensity"]) {
+  if (intensity === "calm") return 110;
+  if (intensity === "curious") return 220;
+  return 360;
+}
 
-  try {
-    if (chromeStorage) {
-      await chromeStorage.set({ [STORAGE_KEY]: position });
-      return;
-    }
-  } catch {
-    // Fall through to localStorage for the Vite preview.
+function nextWanderPosition(current: BearPosition, intensity: BwithuSettings["wanderIntensity"]) {
+  const distance = wanderDistance(intensity);
+  const centerX = window.innerWidth / 2;
+  const centerY = window.innerHeight / 2;
+  const angle = Math.random() * Math.PI * 2;
+  let target = {
+    x: current.x + Math.cos(angle) * (80 + Math.random() * distance),
+    y: current.y + Math.sin(angle) * (40 + Math.random() * distance * 0.55),
+  };
+
+  const nearCenter = Math.abs(target.x - centerX) < window.innerWidth * 0.18 && Math.abs(target.y - centerY) < window.innerHeight * 0.18;
+  if (nearCenter) {
+    target = {
+      x: target.x < centerX ? target.x - 160 : target.x + 160,
+      y: target.y < centerY ? target.y - 80 : target.y + 80,
+    };
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(position));
+  return clampPosition(target);
 }
 
 export default function Bear({
   state,
   showIntro,
+  speechText,
+  settings,
+  panelOpen,
   onSpawnComplete,
   onIntroComplete,
-  onBlinkComplete,
-  onWaveComplete,
+  onLoopComplete,
   onRequestWave,
+  onOpenPanel,
+  onDragReaction,
+  onHoverReaction,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
   const [positionReady, setPositionReady] = useState(false);
+  const [facing, setFacing] = useState<1 | -1>(1);
   const hasDraggedRef = useRef(false);
+  const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restorePosition() {
-      const saved = await loadPosition();
+      const saved = await loadBearPosition();
       if (cancelled) return;
 
       const next = saved ? clampPosition(saved) : defaultPosition();
@@ -140,15 +140,31 @@ export default function Bear({
     return () => window.removeEventListener("resize", keepInsideViewport);
   }, [x, y]);
 
-  const animationState = state === "hidden" || state === "sleep" ? "idle" : state;
+  useEffect(() => {
+    if (!positionReady || panelOpen || state !== "idle") return;
+
+    wanderTimerRef.current = setTimeout(() => {
+      const current = { x: x.get(), y: y.get() };
+      const next = nextWanderPosition(current, settings.wanderIntensity);
+      setFacing(next.x >= current.x ? 1 : -1);
+      x.set(next.x);
+      y.set(next.y);
+      void saveBearPosition(next);
+    }, wanderDelay(settings.wanderIntensity));
+
+    return () => {
+      if (wanderTimerRef.current) clearTimeout(wanderTimerRef.current);
+    };
+  }, [panelOpen, positionReady, settings.wanderIntensity, state, x, y]);
+
+  const animationState = state === "hidden" ? "idle" : state;
   const config = animationConfigs[animationState] ?? animationConfigs.idle;
 
   const handleAnimationComplete = useMemo(() => {
     if (state === "spawning") return onSpawnComplete;
-    if (state === "blink") return onBlinkComplete;
-    if (state === "wave") return onWaveComplete;
-    return undefined;
-  }, [onBlinkComplete, onSpawnComplete, onWaveComplete, state]);
+    if (config.loop) return undefined;
+    return onLoopComplete;
+  }, [config.loop, onLoopComplete, onSpawnComplete, state]);
 
   const handlePointerDown = useCallback(() => {
     hasDraggedRef.current = false;
@@ -156,40 +172,43 @@ export default function Bear({
 
   const handleClick = useCallback(() => {
     if (hasDraggedRef.current || state === "spawning") return;
-    playClickPop();
+    if (settings.soundEnabled) playClickPop();
     onRequestWave();
-  }, [onRequestWave, state]);
+    onOpenPanel();
+  }, [onOpenPanel, onRequestWave, settings.soundEnabled, state]);
 
   if (!positionReady) return null;
 
   return (
     <motion.div
       drag
-      dragMomentum={false}
-      dragElastic={0.04}
+      dragMomentum
+      dragElastic={0.09}
       onPointerDown={handlePointerDown}
       onClick={handleClick}
+      onMouseEnter={onHoverReaction}
       onDrag={() => {
         hasDraggedRef.current = true;
+        onDragReaction();
       }}
       onDragEnd={(_, info) => {
         hasDraggedRef.current = Math.abs(info.offset.x) > 3 || Math.abs(info.offset.y) > 3;
         const next = clampPosition({ x: x.get(), y: y.get() });
         x.set(next.x);
         y.set(next.y);
-        void savePosition(next);
+        void saveBearPosition(next);
       }}
       initial={{ opacity: 0, scale: 0.7 }}
       animate={{
         opacity: 1,
-        scale: state === "wave" ? [1, 1.08, 1] : 1,
+        scale: state === "wave" || state === "happy" ? [1, 1.1, 1] : 1,
       }}
       exit={{ opacity: 0, scale: 0.82 }}
       transition={{
         scale: { duration: 0.3 },
         opacity: { duration: 0.2 },
       }}
-      whileDrag={{ cursor: "grabbing", scale: 1.04 }}
+      whileDrag={{ cursor: "grabbing", scale: 1.05, rotate: 2 }}
       style={{
         position: "fixed",
         left: 0,
@@ -205,16 +224,28 @@ export default function Bear({
       }}
     >
       <motion.div
+        className={
+          state === "listen"
+            ? "bwithu-bear-stage bwithu-bear-stage--listen"
+            : state === "talk"
+              ? "bwithu-bear-stage bwithu-bear-stage--talk"
+              : "bwithu-bear-stage"
+        }
         animate={{
-          y: state === "idle" ? [0, -4, 0] : 0,
-          rotate: state === "idle" ? [0, -1.4, 0.8, 0] : 0,
+          y: state === "idle" || state === "curious" || state === "sleep" ? [0, -5, 0] : 0,
+          rotate: state === "idle" ? [0, -1.2, 0.8, 0] : state === "think" ? [-2, 2, -2] : 0,
+          scaleX: facing,
+          scaleY: state === "idle" || state === "listen" ? [1, 0.965, 1] : 1,
         }}
         transition={{
-          y: { repeat: state === "idle" ? Infinity : 0, duration: 3.6, ease: "easeInOut" },
-          rotate: { repeat: state === "idle" ? Infinity : 0, duration: 5.2, ease: "easeInOut" },
+          y: { repeat: state === "idle" || state === "curious" || state === "sleep" ? Infinity : 0, duration: 3.4, ease: "easeInOut" },
+          rotate: { repeat: state === "idle" || state === "think" ? Infinity : 0, duration: state === "think" ? 0.7 : 5.2 },
+          scaleY: { repeat: state === "idle" || state === "listen" ? Infinity : 0, duration: 2.6, ease: "easeInOut" },
         }}
       >
-        {showIntro && <SpeechBubble text={INTRO_TEXT} onComplete={onIntroComplete} />}
+        {(showIntro || speechText) && (
+          <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} />
+        )}
         <SpritePlayer
           key={state}
           imageSrc={resolveAsset(config.imageSrc)}
@@ -225,7 +256,7 @@ export default function Bear({
           loop={config.loop}
           onComplete={handleAnimationComplete}
           style={{
-            filter: "drop-shadow(0 10px 18px rgba(48, 31, 18, 0.2))",
+            filter: "drop-shadow(0 10px 18px rgba(48, 31, 18, 0.24))",
           }}
         />
       </motion.div>

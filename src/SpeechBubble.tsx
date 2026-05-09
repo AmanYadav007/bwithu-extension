@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 interface SpeechBubbleProps {
   text: string;
   onComplete: () => void;
+  hold?: boolean;
 }
 
-export default function SpeechBubble({ text, onComplete }: SpeechBubbleProps) {
+export default function SpeechBubble({ text, onComplete, hold = false }: SpeechBubbleProps) {
   const [displayedText, setDisplayedText] = useState("");
 
   useEffect(() => {
@@ -19,7 +20,7 @@ export default function SpeechBubble({ text, onComplete }: SpeechBubbleProps) {
 
       if (charIndex >= text.length) {
         clearInterval(typeTimer);
-        doneTimer = setTimeout(onComplete, 900);
+        if (!hold) doneTimer = setTimeout(onComplete, 900);
       }
     }, 55);
 
@@ -27,7 +28,7 @@ export default function SpeechBubble({ text, onComplete }: SpeechBubbleProps) {
       clearInterval(typeTimer);
       if (doneTimer) clearTimeout(doneTimer);
     };
-  }, [onComplete, text]);
+  }, [hold, onComplete, text]);
 
   return (
     <motion.div

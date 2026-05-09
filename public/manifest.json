@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "BwithU",
   "version": "0.1",
-  "permissions": ["storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>", "https://api.x.ai/*"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
@@ -14,8 +14,23 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.x.ai wss://api.x.ai"
+  },
   "action": {
-    "default_title": "Toggle BwithU"
+    "default_title": "Toggle BwithU",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "web_accessible_resources": [
     {

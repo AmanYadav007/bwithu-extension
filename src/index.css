@@ -7,3 +7,322 @@
   isolation: isolate;
   contain: layout style paint;
 }
+
+.bwithu-portal {
+  position: fixed;
+  right: 46px;
+  bottom: 54px;
+  width: 112px;
+  height: 112px;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 245, 180, 0.95) 0 12%, rgba(255, 153, 72, 0.8) 24%, rgba(95, 52, 176, 0.72) 44%, rgba(24, 13, 60, 0) 68%);
+  box-shadow:
+    0 0 0 4px rgba(255, 240, 150, 0.45),
+    0 0 34px rgba(255, 190, 80, 0.72),
+    0 0 72px rgba(110, 70, 220, 0.65);
+  animation: bwithu-portal-open 1.15s ease-out forwards;
+}
+
+.bwithu-portal::before,
+.bwithu-portal::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 3px dashed rgba(255, 250, 190, 0.88);
+  border-radius: 50%;
+  animation: bwithu-portal-spin 0.9s linear infinite;
+}
+
+.bwithu-portal::after {
+  inset: 24px;
+  border-color: rgba(255, 145, 68, 0.75);
+  animation-direction: reverse;
+}
+
+.bwithu-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 152px;
+  width: min(310px, calc(100vw - 24px));
+  overflow: visible;
+  pointer-events: auto;
+  color: #2b1b12;
+  background:
+    linear-gradient(135deg, rgba(255, 250, 235, 0.98), rgba(255, 238, 191, 0.98));
+  border: 2px solid #3b2416;
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.75) inset,
+    0 8px 0 rgba(59, 36, 22, 0.2),
+    0 14px 28px rgba(24, 16, 12, 0.26);
+  image-rendering: pixelated;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bwithu-panel button,
+.bwithu-panel input,
+.bwithu-panel select {
+  font: inherit;
+}
+
+.bwithu-panel button {
+  min-height: 28px;
+  color: #fff7dc;
+  background: #7b3f1d;
+  border: 2px solid #2d170c;
+  box-shadow: 0 3px 0 #2d170c;
+  cursor: pointer;
+}
+
+.bwithu-panel button:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2d170c;
+}
+
+.bwithu-panel input,
+.bwithu-panel select {
+  width: 100%;
+  min-height: 32px;
+  color: #2b1b12;
+  background: #fffaf0;
+  border: 2px solid #5f371f;
+  border-radius: 0;
+  padding: 5px 7px;
+}
+
+.bwithu-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  color: #fff7dc;
+  background: #3b2416;
+  border-radius: 6px 6px 0 0;
+}
+
+.bwithu-panel__bar div {
+  display: flex;
+  gap: 5px;
+}
+
+.bwithu-panel__bar button {
+  min-width: 28px;
+  min-height: 24px;
+  padding: 0;
+}
+
+.bwithu-panel__bar button:last-child {
+  background: #b33b2e;
+}
+
+.bwithu-chat-log,
+.bwithu-confirm,
+.bwithu-settings,
+.bwithu-status,
+.bwithu-chat-form {
+  margin: 8px;
+}
+
+.bwithu-chat-log {
+  min-height: 82px;
+  max-height: 148px;
+  overflow: auto;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid rgba(95, 55, 31, 0.45);
+}
+
+.bwithu-chat-log p {
+  margin: 0 0 7px;
+}
+
+.bwithu-chat-log span {
+  font-weight: 700;
+}
+
+.bwithu-chat-log__assistant {
+  color: #6d351d;
+}
+
+.bwithu-live-caption {
+  color: #14515a;
+}
+
+.bwithu-chat-pair {
+  display: grid;
+  gap: 7px;
+}
+
+.bwithu-chat-bubble {
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 2px solid rgba(80, 45, 23, 0.3);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.bwithu-chat-bubble span {
+  font-size: 10px;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.bwithu-chat-bubble--user {
+  margin-left: 34px !important;
+  color: #174c57;
+  border-color: rgba(23, 76, 87, 0.36);
+}
+
+.bwithu-chat-bubble--bear {
+  margin-right: 34px !important;
+  color: #7a371b;
+  border-color: rgba(122, 55, 27, 0.36);
+}
+
+.bwithu-chat-history {
+  display: none;
+}
+
+.bwithu-confirm {
+  padding: 8px;
+  background: #ffe09f;
+  border: 2px solid #9a5b24;
+}
+
+.bwithu-confirm div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bwithu-chat-form {
+  display: grid;
+  grid-template-columns: 44px 1fr 58px;
+  gap: 6px;
+}
+
+.bwithu-mic {
+  padding: 0 6px;
+}
+
+.bwithu-mic--active {
+  background: #b33b2e !important;
+  animation: bwithu-pulse 0.85s infinite;
+}
+
+.bwithu-settings {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 2px dashed rgba(95, 55, 31, 0.45);
+}
+
+.bwithu-settings label {
+  display: grid;
+  gap: 4px;
+}
+
+.bwithu-settings__row,
+.bwithu-settings__toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bwithu-settings__toggles {
+  grid-template-columns: 1fr 1fr 72px;
+  align-items: center;
+}
+
+.bwithu-settings .bwithu-check {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+}
+
+.bwithu-settings .bwithu-check input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+}
+
+.bwithu-status {
+  color: #6d351d;
+  margin-top: 0;
+}
+
+@keyframes bwithu-pulse {
+  0%,
+  100% {
+    box-shadow: 0 3px 0 #2d170c, 0 0 0 rgba(179, 59, 46, 0);
+  }
+  50% {
+    box-shadow: 0 3px 0 #2d170c, 0 0 18px rgba(179, 59, 46, 0.55);
+  }
+}
+
+@keyframes bwithu-portal-open {
+  0% {
+    opacity: 0;
+    transform: scale(0.12) rotate(-24deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.08) rotate(10deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.88) rotate(28deg);
+  }
+}
+
+@keyframes bwithu-portal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bwithu-bear-stage {
+  position: relative;
+}
+
+.bwithu-bear-stage--listen::before,
+.bwithu-bear-stage--listen::after,
+.bwithu-bear-stage--talk::before,
+.bwithu-bear-stage--talk::after {
+  content: "";
+  position: absolute;
+  inset: 15px;
+  pointer-events: none;
+  border: 2px solid rgba(64, 181, 197, 0.65);
+  border-radius: 50%;
+  animation: bwithu-wave-ring 1.15s ease-out infinite;
+}
+
+.bwithu-bear-stage--listen::after,
+.bwithu-bear-stage--talk::after {
+  animation-delay: 0.36s;
+}
+
+.bwithu-bear-stage--talk::before,
+.bwithu-bear-stage--talk::after {
+  border-color: rgba(255, 182, 73, 0.74);
+}
+
+@keyframes bwithu-wave-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.38);
+  }
+}

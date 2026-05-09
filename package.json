@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:local": "npm run seed:key && npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "seed:key": "node scripts/write-local-config.cjs",
     "serve": "vite preview --port 3000"
   },
   "dependencies": {

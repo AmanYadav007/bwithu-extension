@@ -49,3 +49,24 @@ export function playTinySparkle() {
   tone(1180, now, 0.08, 0.018);
   tone(1568, now + 0.045, 0.1, 0.014);
 }
+
+export function playListenStart() {
+  const context = getAudioContext();
+  const now = context.currentTime;
+  tone(392, now, 0.11, 0.02, "triangle");
+  tone(587.33, now + 0.055, 0.16, 0.018);
+}
+
+export function playThinkingTick() {
+  const context = getAudioContext();
+  const now = context.currentTime;
+  tone(740, now, 0.045, 0.012, "sine");
+  tone(880, now + 0.05, 0.045, 0.01, "sine");
+}
+
+export function playHappyChirp() {
+  const context = getAudioContext();
+  const now = context.currentTime;
+  tone(659.25, now, 0.08, 0.018, "triangle");
+  tone(1046.5, now + 0.055, 0.12, 0.016);
+}
