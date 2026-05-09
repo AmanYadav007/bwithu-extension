@@ -5,20 +5,25 @@ import "./index.css";
 
 const root = document.createElement("div");
 root.id = "bwithu-root";
-document.body.appendChild(root);
+document.documentElement.appendChild(root);
 
-let visible = true;
+let visible = false;
+const reactRoot = ReactDOM.createRoot(root);
+
+function render() {
+  reactRoot.render(<App enabled={visible} />);
+}
 
 browser.runtime.onMessage.addListener((request: unknown) => {
   if (
     request !== null &&
     typeof request === "object" &&
-    "toggle" in request &&
-    (request as { toggle: boolean }).toggle
+    "type" in request &&
+    (request as { type?: string }).type === "BWITHU_TOGGLE"
   ) {
     visible = !visible;
-    root.style.visibility = visible ? "visible" : "hidden";
+    render();
   }
 });
 
-ReactDOM.createRoot(root).render(<App />);
+render();

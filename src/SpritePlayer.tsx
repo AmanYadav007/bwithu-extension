@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 
 interface SpritePlayerProps {
   imageSrc: string;
@@ -8,7 +9,7 @@ interface SpritePlayerProps {
   fps: number;
   loop?: boolean;
   onComplete?: () => void;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 export default function SpritePlayer({
@@ -22,8 +23,6 @@ export default function SpritePlayer({
   style,
 }: SpritePlayerProps) {
   const divRef = useRef<HTMLDivElement>(null);
-  const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const frameDuration = 1000 / fps;
@@ -53,7 +52,7 @@ export default function SpritePlayer({
             frame = frameCount - 1;
             done = true;
             divRef.current.style.backgroundPositionX = `-${frame * frameWidth}px`;
-            onCompleteRef.current?.();
+            onComplete?.();
             return;
           }
         }
@@ -67,7 +66,7 @@ export default function SpritePlayer({
     rafId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(rafId);
-  }, [imageSrc, frameWidth, frameHeight, frameCount, fps, loop]);
+  }, [imageSrc, frameWidth, frameHeight, frameCount, fps, loop, onComplete]);
 
   return (
     <div
