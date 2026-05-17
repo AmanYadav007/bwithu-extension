@@ -38,8 +38,8 @@ export default function SpeechBubble({ text, onComplete, hold = false }: SpeechB
       transition={{ duration: 0.2 }}
       style={{
         position: "absolute",
-        right: 8,
-        bottom: 118,
+        right: 14,
+        bottom: 212,
         width: 196,
         maxWidth: "calc(100vw - 32px)",
         border: "1px solid rgba(80, 55, 32, 0.12)",

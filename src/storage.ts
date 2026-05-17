@@ -8,6 +8,8 @@ export interface BearPosition {
 
 export interface BwithuSettings {
   apiKey: string;
+  braveApiKey: string;
+  characterRenderer: "glb" | "sprite";
   voiceId: "ara" | "eve" | "rex" | "sal" | "leo";
   soundEnabled: boolean;
   voiceEnabled: boolean;
@@ -16,6 +18,8 @@ export interface BwithuSettings {
 
 export const DEFAULT_SETTINGS: BwithuSettings = {
   apiKey: "",
+  braveApiKey: "",
+  characterRenderer: "glb",
   voiceId: "ara",
   soundEnabled: true,
   voiceEnabled: true,
@@ -89,12 +93,19 @@ async function removeStored(key: string) {
 export async function loadSettings(): Promise<BwithuSettings> {
   const saved = await getStored<Partial<BwithuSettings>>(SETTINGS_KEY);
   const localConfig = await loadLocalConfig();
-  const savedWithoutBlankKey = saved?.apiKey ? saved : { ...saved, apiKey: undefined };
-  return { ...DEFAULT_SETTINGS, ...localConfig, ...savedWithoutBlankKey };
+  return { ...DEFAULT_SETTINGS, ...localConfig, ...withoutBlankProviderKeys(saved) };
 }
 
 export async function saveSettings(settings: BwithuSettings) {
   await setStored(SETTINGS_KEY, settings);
+}
+
+function withoutBlankProviderKeys(settings?: Partial<BwithuSettings>): Partial<BwithuSettings> {
+  if (!settings) return {};
+  const next = { ...settings };
+  if (!next.apiKey) delete next.apiKey;
+  if (!next.braveApiKey) delete next.braveApiKey;
+  return next;
 }
 
 export async function loadBearPosition() {
@@ -115,8 +126,17 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
     if (!url) return {};
     const response = await fetch(url);
     if (!response.ok) return {};
-    const config = (await response.json()) as { XAI_API_KEY?: string; apiKey?: string };
-    return { apiKey: config.apiKey ?? config.XAI_API_KEY ?? "" };
+    const config = (await response.json()) as {
+      XAI_API_KEY?: string;
+      BRAVE_SEARCH_API_KEY?: string;
+      BRAVE_API_KEY?: string;
+      apiKey?: string;
+      braveApiKey?: string;
+    };
+    return {
+      apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
+      braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
+    };
   } catch {
     return {};
   }

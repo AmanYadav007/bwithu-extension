@@ -24,6 +24,7 @@ export class RealtimeVoiceSession {
   private assistantText = "";
   private playTime = 0;
   private heardUserTranscript = false;
+  private responseRequested = false;
   private readonly pageContext: string;
 
   constructor(
@@ -37,7 +38,7 @@ export class RealtimeVoiceSession {
   }
 
   async start() {
-    this.callbacks.onStatus("Opening B's live voice...");
+    this.callbacks.onStatus("Opening Bumi's live voice...");
     const [secret] = await Promise.all([createRealtimeSecret(this.settings), this.startMic()]);
     this.openSocket(secret.value);
   }
@@ -47,9 +48,9 @@ export class RealtimeVoiceSession {
     if (this.ws?.readyState === WebSocket.OPEN) {
       if (requestResponse && !this.heardUserTranscript) {
         this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-        this.ws.send(JSON.stringify({ type: "response.create" }));
+        this.requestResponse();
       }
-      this.callbacks.onStatus(requestResponse ? "B is answering..." : "B stopped listening.");
+      this.callbacks.onStatus(requestResponse ? "Bumi is answering..." : "Bumi stopped listening.");
     }
   }
 
@@ -63,6 +64,7 @@ export class RealtimeVoiceSession {
   private async startMic() {
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     this.audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    if (this.audioContext.state === "suspended") await this.audioContext.resume();
     this.source = this.audioContext.createMediaStreamSource(this.stream);
     this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
     this.source.connect(this.processor);
@@ -94,13 +96,13 @@ export class RealtimeVoiceSession {
 
     this.ws.onopen = () => {
       this.connected = true;
-      this.callbacks.onStatus("B is listening live...");
+      this.callbacks.onStatus("Bumi is listening live...");
       this.ws?.send(
         JSON.stringify({
           type: "session.update",
           session: {
             voice: this.settings.voiceId,
-            instructions: `You are B, a tiny pixel bear companion living on the user's webpage. Be warm, brief, emotionally alive, and helpful. Keep replies under two short sentences unless the user asks for more. Use the current webpage context when the user asks about what is on screen.\n\nCurrent webpage context:\n${this.pageContext.slice(0, 10000)}`,
+            instructions: `You are Bumi, a tiny living bear companion sharing the user's screen. Speak like a warm friend on a call: brief, natural, emotionally present, and helpful. Keep replies under two short sentences unless the user asks for more. Use the current webpage context when the user asks about what is on screen.\n\nCurrent webpage context:\n${this.pageContext.slice(0, 10000)}`,
             turn_detection: {
               type: "server_vad",
               threshold: 0.72,
@@ -127,7 +129,7 @@ export class RealtimeVoiceSession {
     };
 
     this.ws.onerror = () => {
-      this.callbacks.onStatus("B's live voice connection stumbled.");
+      this.callbacks.onStatus("Bumi's live voice connection stumbled.");
     };
 
     this.ws.onclose = () => {
@@ -164,12 +166,26 @@ export class RealtimeVoiceSession {
     if (type === "response.done") {
       this.callbacks.onAssistantDone(this.assistantText.trim());
       this.assistantText = "";
+      this.responseRequested = false;
       this.callbacks.onStatus("");
+      return;
     }
+
+    if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
+      this.callbacks.onStatus("Bumi is answering...");
+      this.requestResponse();
+    }
+  }
+
+  private requestResponse() {
+    if (this.responseRequested || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.responseRequested = true;
+    this.ws.send(JSON.stringify({ type: "response.create" }));
   }
 
   private playPcmDelta(base64: string) {
     if (!this.audioContext) return;
+    if (this.audioContext.state === "suspended") void this.audioContext.resume();
     const float32 = base64PCM16ToFloat32(base64);
     const buffer = this.audioContext.createBuffer(1, float32.length, SAMPLE_RATE);
     buffer.copyToChannel(float32, 0);

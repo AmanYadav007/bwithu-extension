@@ -57,12 +57,12 @@ export default function PixelPanel({
       className="bwithu-panel"
     >
       <div className="bwithu-panel__bar">
-        <span>{isRecording ? "B is listening" : "B"}</span>
+        <span>{isRecording ? "Bumi is listening" : "Bumi"}</span>
         <div>
-          <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="B settings">
+          <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="Bumi settings">
             key
           </button>
-          <button type="button" onClick={onClose} aria-label="Close B panel">
+          <button type="button" onClick={onClose} aria-label="Close Bumi panel">
             x
           </button>
         </div>
@@ -75,7 +75,7 @@ export default function PixelPanel({
             {liveCaption || lastMessage(messages, "user") || "Say something..."}
           </p>
           <p className="bwithu-chat-bubble bwithu-chat-bubble--bear">
-            <span>B</span>
+            <span>Bumi</span>
             {assistantCaption || lastMessage(messages, "assistant") || "I'm here."}
           </p>
         </div>
@@ -83,7 +83,7 @@ export default function PixelPanel({
           <div className="bwithu-chat-history">
             {messages.slice(-2).map((message, index) => (
             <p key={`${message.role}-${index}`} className={`bwithu-chat-log__${message.role}`}>
-              <span>{message.role === "user" ? "You" : "B"}:</span> {message.content}
+              <span>{message.role === "user" ? "You" : "Bumi"}:</span> {message.content}
             </p>
             ))}
           </div>
@@ -92,7 +92,7 @@ export default function PixelPanel({
 
       {pendingAction && (
         <section className="bwithu-confirm">
-          <p>B wants to: {describeAction(pendingAction)}</p>
+          <p>Bumi wants to: {describeAction(pendingAction)}</p>
           <div>
             <button type="button" onClick={onConfirmAction}>
               Do it
@@ -116,8 +116,8 @@ export default function PixelPanel({
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Talk to B..."
-          aria-label="Message B"
+          placeholder="Talk to Bumi..."
+          aria-label="Message Bumi"
         />
         <button type="submit">Send</button>
       </form>
@@ -133,7 +133,28 @@ export default function PixelPanel({
               type="password"
             />
           </label>
+          <label>
+            Brave key
+            <input
+              value={settings.braveApiKey}
+              onChange={(event) => onSettingsChange({ ...settings, braveApiKey: event.target.value.trim() })}
+              placeholder="BSA..."
+              type="password"
+            />
+          </label>
           <div className="bwithu-settings__row">
+            <label>
+              Body
+              <select
+                value={settings.characterRenderer}
+                onChange={(event) =>
+                  onSettingsChange({ ...settings, characterRenderer: event.target.value as BwithuSettings["characterRenderer"] })
+                }
+              >
+                <option value="glb">3D</option>
+                <option value="sprite">Pixel</option>
+              </select>
+            </label>
             <label>
               Voice
               <select
@@ -147,6 +168,8 @@ export default function PixelPanel({
                 <option value="leo">leo</option>
               </select>
             </label>
+          </div>
+          <div className="bwithu-settings__row">
             <label>
               Move
               <select
@@ -203,7 +226,7 @@ function describeAction(action: BrowserAction) {
     case "switch_tab":
       return `switch to ${action.payload.query}`;
     case "hide_bear":
-      return "hide B";
+      return "hide Bumi";
     default:
       return "take an action";
   }
