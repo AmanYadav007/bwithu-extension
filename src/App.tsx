@@ -1,16 +1,17 @@
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Bear from "./Bear";
-import PixelPanel from "./PixelPanel";
+import QuickControls from "./QuickControls";
 import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
 import type { BehaviorEvent } from "./behaviorController";
 import type { BrowserAction, ConversationTurn } from "./brainClient";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
+import { useBearStore } from "./bearStore";
 import { collectPageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
 import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
-import { DEFAULT_SETTINGS, loadSettings, resetBearPosition, saveSettings } from "./storage";
+import { DEFAULT_SETTINGS, loadSettings } from "./storage";
 import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
@@ -44,6 +45,12 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
 }
 
+function looksLikeWebIntent(text: string) {
+  return /\b(today|latest|current|now|recent|news|weather|price|pricing|research|compare|best|recommend|reviews|look up|find out|search the web)\b/i.test(
+    text,
+  );
+}
+
 interface AppProps {
   enabled?: boolean;
   onRequestHide?: () => void;
@@ -57,10 +64,10 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [messages, setMessages] = useState<ConversationTurn[]>([]);
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
-  const [status, setStatus] = useState("");
+  const [, setStatus] = useState("");
   const [isRecording, setIsRecording] = useState(false);
-  const [liveCaption, setLiveCaption] = useState("");
-  const [assistantCaption, setAssistantCaption] = useState("");
+  const [, setLiveCaption] = useState("");
+  const [, setAssistantCaption] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const introFinishedRef = useRef(false);
@@ -70,6 +77,9 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const chunksRef = useRef<Blob[]>([]);
   const finalTranscriptRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mood = useBearStore((store) => store.mood);
+  const dispatchMoodEvent = useBearStore((store) => store.dispatchMoodEvent);
+  const refreshEnvironmentalMood = useBearStore((store) => store.refreshEnvironmentalMood);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,8 +107,9 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const dispatchBehavior = useCallback(
     (event: BehaviorEvent) => {
+      dispatchMoodEvent(event);
       setBearState((current) => {
-        const next = nextBehaviorState(current, event);
+        const next = nextBehaviorState(current, event, mood);
         const duration = stateDuration(next);
         if (duration > 0) {
           clearStateTimer();
@@ -107,7 +118,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         return next;
       });
     },
-    [clearStateTimer],
+    [clearStateTimer, dispatchMoodEvent, mood],
   );
 
   const scheduleIdleEvent = useCallback(() => {
@@ -137,7 +148,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setShowIntro(false);
       setSpeechText("");
       setAssistantCaption("");
-      setPanelOpen(true);
+      setPanelOpen(false);
       setBearState("spawning");
       if (settings.soundEnabled) {
         playSpawnChime();
@@ -162,10 +173,10 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     return () => window.removeEventListener("scroll", reactToScroll);
   }, [dispatchBehavior]);
 
-  const handleSettingsChange = useCallback((next: BwithuSettings) => {
-    setSettings(next);
-    void saveSettings(next);
-  }, []);
+  useEffect(() => {
+    const timer = setInterval(refreshEnvironmentalMood, 60_000);
+    return () => clearInterval(timer);
+  }, [refreshEnvironmentalMood]);
 
   const playVoiceReply = useCallback(async (text: string) => {
     if (!settings.voiceEnabled || !settings.apiKey) return;
@@ -178,7 +189,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       audioRef.current.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
       await audioRef.current.play();
     } catch {
-      setStatus("B could not speak this time, but he heard you.");
+      setStatus("Bumi could not speak this time, but he heard you.");
     }
   }, [settings]);
 
@@ -186,7 +197,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("intro");
     setShowIntro(true);
     if (settings.soundEnabled) playTinySparkle();
-    if (settings.voiceEnabled && settings.apiKey) void playVoiceReply("Hi. I'm B. This is my first day here.");
+    if (settings.voiceEnabled && settings.apiKey) void playVoiceReply("Hi. I'm Bumi. This is my first day here.");
   }, [playVoiceReply, settings.apiKey, settings.soundEnabled, settings.voiceEnabled]);
 
   const handleIntroComplete = useCallback(() => {
@@ -203,7 +214,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const handleSendMessage = useCallback(
     async (text: string) => {
       if (!settings.apiKey) {
-        setPanelOpen(true);
         setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
         setSpeechText("I need my Grok key before I can think.");
         return;
@@ -211,12 +221,13 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
       const userTurn: ConversationTurn = { role: "user", content: text };
       const nextHistory = [...messages, userTurn].slice(-8);
+      const needsSearch = looksLikeWebIntent(text);
       setMessages(nextHistory);
       setAssistantCaption("");
-      setSpeechText("Thinking...");
-      setStatus("B is thinking...");
+      setSpeechText(needsSearch ? "Let me look that up..." : "Thinking...");
+      setStatus(needsSearch ? "Bumi is checking the internet..." : "Bumi is thinking...");
       if (settings.soundEnabled) playThinkingTick();
-      dispatchBehavior("messageStarted");
+      dispatchBehavior(needsSearch ? "searchStarted" : "messageStarted");
 
       try {
         const reply = await sendTextMessage(text, settings, nextHistory, collectPageContext());
@@ -225,12 +236,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setAssistantCaption(reply.message);
         setSpeechText(reply.message);
         setPendingAction(reply.type === "browser_action" && reply.action ? reply.action : null);
-        setStatus(reply.requiresConfirmation ? "B needs your confirmation." : "");
-        dispatchBehavior(reply.type === "browser_action" ? "messageEnded" : "messageEnded");
+        setStatus(reply.requiresConfirmation ? "Bumi needs your confirmation." : "");
+        dispatchBehavior(needsSearch ? "searchEnded" : "messageEnded");
         if (settings.soundEnabled) playHappyChirp();
         void playVoiceReply(reply.message);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "B had trouble reaching Grok.";
+        const message = error instanceof Error ? error.message : "Bumi had trouble reaching Grok.";
         setStatus(message);
         setSpeechText(message);
         setBearState("curious");
@@ -241,7 +252,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const stopRecording = useCallback(() => {
     if (realtimeVoiceRef.current) {
-      realtimeVoiceRef.current.stop(false);
+      realtimeVoiceRef.current.stop(true);
       realtimeVoiceRef.current.close();
       realtimeVoiceRef.current = null;
       setIsRecording(false);
@@ -258,7 +269,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const startLegacyRecording = useCallback(async () => {
     if (isRecording) return;
     if (!settings.apiKey) {
-      setPanelOpen(true);
       setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
       return;
     }
@@ -311,7 +321,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         dispatchBehavior("voiceEnded");
 
         if (caption) {
-          setStatus("B heard you.");
+          setStatus("Bumi heard you.");
           setLiveCaption(caption);
           void handleSendMessage(caption);
           return;
@@ -320,12 +330,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setStatus("Catching your words...");
         void transcribeAudio(blob, settings)
           .then((text) => {
-            setStatus(text ? "B heard you." : "B did not catch that.");
+            setStatus(text ? "Bumi heard you." : "Bumi did not catch that.");
             setLiveCaption(text);
             if (text) void handleSendMessage(text);
           })
           .catch((error) => {
-            setStatus(error instanceof Error ? error.message : "B could not transcribe that.");
+            setStatus(error instanceof Error ? error.message : "Bumi could not transcribe that.");
             setSpeechText("I could not catch that. Try again?");
           });
       };
@@ -345,17 +355,17 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const startRecording = useCallback(async () => {
     if (isRecording) return;
     if (!settings.apiKey) {
-      setPanelOpen(true);
       setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
       return;
     }
 
+    setPanelOpen(true);
     setLiveCaption("");
     setAssistantCaption("");
     setSpeechText("I'm listening...");
-      setStatus("Opening live voice...");
-      if (settings.soundEnabled) playListenStart();
-      dispatchBehavior("voiceStarted");
+    setStatus("Opening live voice...");
+    if (settings.soundEnabled) playListenStart();
+    dispatchBehavior("voiceStarted");
 
     try {
       const browserContext = await getBrowserContext(collectPageContext());
@@ -374,28 +384,33 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             setAssistantCaption(text);
             setSpeechText(text);
           }
-          setIsRecording(false);
           if (settings.soundEnabled) playHappyChirp();
           dispatchBehavior("messageEnded");
-          realtimeVoiceRef.current?.close();
-          realtimeVoiceRef.current = null;
+          window.setTimeout(() => {
+            if (realtimeVoiceRef.current) {
+              setStatus("Listening live...");
+              dispatchBehavior("voiceStarted");
+            }
+          }, 450);
         },
         onStatus: setStatus,
       }, browserContext);
       realtimeVoiceRef.current = session;
       await session.start();
       setIsRecording(true);
-    } catch {
+    } catch (error) {
       realtimeVoiceRef.current?.close();
       realtimeVoiceRef.current = null;
-      setStatus("Live voice fell back to normal voice.");
+      const message = error instanceof Error ? error.message : "Live voice fell back to normal voice.";
+      setSpeechText(message.includes("API key") ? "I need my voice key first." : "Trying the backup mic...");
+      setStatus(message);
       await startLegacyRecording();
     }
   }, [dispatchBehavior, isRecording, settings, startLegacyRecording]);
 
   const handleConfirmAction = useCallback(async () => {
     if (!pendingAction) return;
-    setStatus("B is doing it...");
+    setStatus("Bumi is doing it...");
     if (settings.soundEnabled) playClickPop();
     try {
       const result = await runBrowserAction(pendingAction);
@@ -403,18 +418,13 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setSpeechText(result);
       if (pendingAction.kind === "hide_bear") onRequestHide?.();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "B could not complete that action.";
+      const message = error instanceof Error ? error.message : "Bumi could not complete that action.";
       setStatus(message);
       setSpeechText(message);
     } finally {
       setPendingAction(null);
     }
   }, [onRequestHide, pendingAction, settings.soundEnabled]);
-
-  const handleResetPosition = useCallback(() => {
-    void resetBearPosition();
-    setStatus("B will start from his default spot next time.");
-  }, []);
 
   return (
     <AnimatePresence>
@@ -427,6 +437,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             showIntro={showIntro}
             speechText={speechText}
             settings={settings}
+            mood={mood}
             panelOpen={panelOpen}
             onSpawnComplete={handleSpawnComplete}
             onIntroComplete={handleIntroComplete}
@@ -435,28 +446,23 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             onOpenPanel={() => setPanelOpen(true)}
             onDragReaction={() => dispatchBehavior("dragged")}
             onHoverReaction={() => dispatchBehavior("hovered")}
+            controls={
+              panelOpen ? (
+                <QuickControls
+                  isRecording={isRecording}
+                  pendingAction={pendingAction}
+                  onToggleRecording={() => {
+                    if (isRecording) stopRecording();
+                    else void startRecording();
+                  }}
+                  onSendMessage={handleSendMessage}
+                  onConfirmAction={handleConfirmAction}
+                  onCancelAction={() => setPendingAction(null)}
+                  onClose={() => setPanelOpen(false)}
+                />
+              ) : null
+            }
           />
-          {panelOpen && (
-            <PixelPanel
-              settings={settings}
-              messages={messages}
-              pendingAction={pendingAction}
-              status={status}
-              isRecording={isRecording}
-              liveCaption={liveCaption}
-              assistantCaption={assistantCaption}
-              onSettingsChange={handleSettingsChange}
-              onSendMessage={handleSendMessage}
-              onToggleRecording={() => {
-                if (isRecording) stopRecording();
-                else void startRecording();
-              }}
-              onConfirmAction={handleConfirmAction}
-              onCancelAction={() => setPendingAction(null)}
-              onResetPosition={handleResetPosition}
-              onClose={() => setPanelOpen(false)}
-            />
-          )}
         </>
       )}
     </AnimatePresence>

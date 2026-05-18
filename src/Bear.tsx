@@ -1,14 +1,17 @@
-import { motion, useMotionValue } from "framer-motion";
+import { animate, motion, useMotionValue } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import GLBCharacter from "./GLBCharacter";
 import SpritePlayer from "./SpritePlayer";
 import SpeechBubble from "./SpeechBubble";
 import { animationConfigs, INTRO_TEXT } from "./animationStates";
 import type { BearState } from "./animationStates";
+import type { BearMood } from "./behaviorController";
 import { playClickPop } from "./sounds";
 import type { BearPosition, BwithuSettings } from "./storage";
 import { loadBearPosition, saveBearPosition } from "./storage";
 
-const SIZE = 128;
+const SIZE = 230;
 const DEFAULT_MARGIN = 40;
 
 interface ChromeLike {
@@ -22,6 +25,7 @@ interface BearProps {
   showIntro: boolean;
   speechText: string;
   settings: BwithuSettings;
+  mood: BearMood;
   panelOpen: boolean;
   onSpawnComplete: () => void;
   onIntroComplete: () => void;
@@ -30,6 +34,7 @@ interface BearProps {
   onOpenPanel: () => void;
   onDragReaction: () => void;
   onHoverReaction: () => void;
+  controls?: ReactNode;
 }
 
 function resolveAsset(filename: string): string {
@@ -94,6 +99,7 @@ export default function Bear({
   showIntro,
   speechText,
   settings,
+  mood,
   panelOpen,
   onSpawnComplete,
   onIntroComplete,
@@ -102,13 +108,16 @@ export default function Bear({
   onOpenPanel,
   onDragReaction,
   onHoverReaction,
+  controls,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
   const [positionReady, setPositionReady] = useState(false);
   const [facing, setFacing] = useState<1 | -1>(1);
+  const [glbUnavailable, setGlbUnavailable] = useState(false);
   const hasDraggedRef = useRef(false);
   const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const useGlbRenderer = settings.characterRenderer === "glb" && !glbUnavailable;
 
   useEffect(() => {
     let cancelled = false;
@@ -141,14 +150,20 @@ export default function Bear({
   }, [x, y]);
 
   useEffect(() => {
+    if (!useGlbRenderer || state !== "spawning") return undefined;
+    const timer = setTimeout(onSpawnComplete, 1180);
+    return () => clearTimeout(timer);
+  }, [onSpawnComplete, state, useGlbRenderer]);
+
+  useEffect(() => {
     if (!positionReady || panelOpen || state !== "idle") return;
 
     wanderTimerRef.current = setTimeout(() => {
       const current = { x: x.get(), y: y.get() };
       const next = nextWanderPosition(current, settings.wanderIntensity);
       setFacing(next.x >= current.x ? 1 : -1);
-      x.set(next.x);
-      y.set(next.y);
+      animate(x, next.x, { type: "spring", stiffness: 70, damping: 18, mass: 0.9 });
+      animate(y, next.y, { type: "spring", stiffness: 90, damping: 20, mass: 1 });
       void saveBearPosition(next);
     }, wanderDelay(settings.wanderIntensity));
 
@@ -224,41 +239,58 @@ export default function Bear({
       }}
     >
       <motion.div
-        className={
-          state === "listen"
-            ? "bwithu-bear-stage bwithu-bear-stage--listen"
-            : state === "talk"
-              ? "bwithu-bear-stage bwithu-bear-stage--talk"
-              : "bwithu-bear-stage"
-        }
+        className={["bwithu-bear-stage", `bwithu-bear-stage--${state}`, `bwithu-bear-stage--mood-${mood}`].join(" ")}
         animate={{
-          y: state === "idle" || state === "curious" || state === "sleep" ? [0, -5, 0] : 0,
-          rotate: state === "idle" ? [0, -1.2, 0.8, 0] : state === "think" ? [-2, 2, -2] : 0,
-          scaleX: facing,
-          scaleY: state === "idle" || state === "listen" ? [1, 0.965, 1] : 1,
+          y: state === "idle" || state === "curious" || state === "sleep" || state === "sleepy" ? [0, -5, 0] : 0,
+          rotate:
+            state === "idle"
+              ? [0, -1.2, 0.8, 0]
+              : state === "think" || state === "searching"
+                ? [-2, 2, -2]
+                : state === "drag"
+                  ? [0, 4, -3, 0]
+                  : 0,
+          scaleX: useGlbRenderer ? 1 : facing,
+          scaleY: state === "idle" || state === "listen" || state === "sleepy" ? [1, 0.965, 1] : 1,
         }}
         transition={{
-          y: { repeat: state === "idle" || state === "curious" || state === "sleep" ? Infinity : 0, duration: 3.4, ease: "easeInOut" },
-          rotate: { repeat: state === "idle" || state === "think" ? Infinity : 0, duration: state === "think" ? 0.7 : 5.2 },
-          scaleY: { repeat: state === "idle" || state === "listen" ? Infinity : 0, duration: 2.6, ease: "easeInOut" },
+          y: { repeat: state === "idle" || state === "curious" || state === "sleep" || state === "sleepy" ? Infinity : 0, duration: 3.4, ease: "easeInOut" },
+          rotate: { repeat: state === "idle" || state === "think" || state === "searching" ? Infinity : 0, duration: state === "think" || state === "searching" ? 0.7 : 5.2 },
+          scaleY: { repeat: state === "idle" || state === "listen" || state === "sleepy" ? Infinity : 0, duration: 2.6, ease: "easeInOut" },
         }}
       >
+        <div className="bwithu-bear-shadow" aria-hidden="true" />
         {(showIntro || speechText) && (
           <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} />
         )}
-        <SpritePlayer
-          key={state}
-          imageSrc={resolveAsset(config.imageSrc)}
-          frameWidth={SIZE}
-          frameHeight={SIZE}
-          frameCount={config.frameCount}
-          fps={config.fps}
-          loop={config.loop}
-          onComplete={handleAnimationComplete}
-          style={{
-            filter: "drop-shadow(0 10px 18px rgba(48, 31, 18, 0.24))",
-          }}
-        />
+        {controls}
+        {useGlbRenderer ? (
+          <GLBCharacter
+            modelSrc={resolveAsset("result.glb")}
+            state={state}
+            mood={mood}
+            facing={facing}
+            size={SIZE}
+            onLoadError={() => setGlbUnavailable(true)}
+          />
+        ) : (
+          <SpritePlayer
+            key={state}
+            imageSrc={resolveAsset(config.imageSrc)}
+            frameWidth={SIZE}
+            frameHeight={SIZE}
+            frameCount={config.frameCount}
+            fps={config.fps}
+            loop={config.loop}
+            onComplete={handleAnimationComplete}
+            style={{
+              width: SIZE,
+              height: SIZE,
+              backgroundSize: `${SIZE * config.frameCount}px ${SIZE}px`,
+              filter: "drop-shadow(0 10px 18px rgba(48, 31, 18, 0.24))",
+            }}
+          />
+        )}
       </motion.div>
     </motion.div>
   );

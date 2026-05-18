@@ -39,6 +39,13 @@ interface ChromeExtensionApi {
   };
 }
 
+interface BraveSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  age?: string;
+}
+
 type RuntimeMessage =
   | { type: "BWITHU_BRAIN_TEXT"; text: string; settings: BwithuSettings; history: ConversationTurn[]; pageContext?: string }
   | { type: "BWITHU_TRANSCRIBE_AUDIO"; audio: number[]; mimeType: string; settings: BwithuSettings }
@@ -64,7 +71,7 @@ chromeApi.action.onClicked.addListener(async (tab) => {
 chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message)
     .then((data) => sendResponse({ ok: true, data }))
-    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "B hit a browser snag." }));
+    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "Bumi hit a browser snag." }));
 
   return true;
 });
@@ -84,7 +91,7 @@ async function handleMessage(message: RuntimeMessage) {
     case "BWITHU_GET_BROWSER_CONTEXT":
       return collectBrowserContext(message.currentPageContext);
     default:
-      throw new Error("B does not know that message yet.");
+      throw new Error("Bumi does not know that message yet.");
   }
 }
 
@@ -98,6 +105,8 @@ async function sendBrainMessage(
   assertApiKey(storedSettings);
 
   const browserContext = await collectBrowserContext(pageContext);
+  const searchQuery = getSearchQuery(text);
+  const webContext = searchQuery ? await collectWebContext(searchQuery, storedSettings) : "";
   const response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -112,7 +121,7 @@ async function sendBrainMessage(
       messages: [
         {
           role: "system",
-          content: `You are B, a tiny pixel bear companion living in the user's browser. Be warm, brief, alive, and helpful. You can use the browser-wide context below when the user asks about tabs, "tab 2", or what is on screen. Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"hide_bear","payload":{}}}. Only use browser_action for safe browser commands. Always set requiresConfirmation true for browser_action. To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}. Do not claim you can access Gmail, calendars, native apps, or email yet.\n\nBrowser context:\n${browserContext.slice(0, 18000)}`,
+          content: `You are Bumi, a tiny pixel bear companion living in the user's browser. Be warm, brief, alive, and helpful. You can use the browser-wide context below when the user asks about tabs, "tab 2", or what is on screen. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful. Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"hide_bear","payload":{}}}. Only use browser_action for safe browser commands. Always set requiresConfirmation true for browser_action. To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}. Do not claim you can access Gmail, calendars, native apps, or email yet.\n\nBrowser context:\n${browserContext.slice(0, 15000)}\n\n${webContext}`,
         },
         ...history.map((turn) => ({ role: turn.role, content: turn.content })),
         { role: "user", content: text },
@@ -125,6 +134,68 @@ async function sendBrainMessage(
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content ?? "";
   return normalizeBrainReply(content, text);
+}
+
+async function collectWebContext(query: string, settings: BwithuSettings) {
+  if (!settings.braveApiKey) {
+    return `Web search requested for "${query}", but no Brave Search API key is configured. Tell the user to add BRAVE_SEARCH_API_KEY in .env for local dev or paste it in Bumi settings.`;
+  }
+
+  try {
+    const results = await braveSearch(query, settings.braveApiKey);
+    if (results.length === 0) return `Web search for "${query}" returned no useful results.`;
+    return [
+      `Fresh web search results from Brave for "${query}":`,
+      ...results.map((result, index) => {
+        const age = result.age ? ` (${result.age})` : "";
+        return `${index + 1}. ${result.title}${age}\n${result.url}\n${result.description}`;
+      }),
+    ].join("\n\n");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Brave Search failed.";
+    return `Web search requested for "${query}", but Brave Search failed: ${message}`;
+  }
+}
+
+async function braveSearch(query: string, apiKey: string): Promise<BraveSearchResult[]> {
+  const url = new URL("https://api.search.brave.com/res/v1/web/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", "5");
+  url.searchParams.set("country", "us");
+  url.searchParams.set("search_lang", "en");
+  url.searchParams.set("safesearch", "moderate");
+  url.searchParams.set("spellcheck", "1");
+  url.searchParams.set("extra_snippets", "1");
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "X-Subscription-Token": apiKey,
+    },
+  });
+
+  if (!response.ok) throw new Error(`Brave Search could not look that up (${response.status}).`);
+  const data = (await response.json()) as {
+    web?: {
+      results?: Array<{
+        title?: string;
+        url?: string;
+        description?: string;
+        extra_snippets?: string[];
+        age?: string;
+      }>;
+    };
+  };
+
+  return (data.web?.results ?? [])
+    .filter((result) => result.title && result.url)
+    .slice(0, 5)
+    .map((result) => ({
+      title: stripHtml(result.title ?? "Untitled"),
+      url: result.url ?? "",
+      description: stripHtml([result.description, ...(result.extra_snippets ?? [])].filter(Boolean).join(" ")).slice(0, 900),
+      age: result.age,
+    }));
 }
 
 async function transcribeAudio(audio: number[], mimeType: string, settings: BwithuSettings) {
@@ -142,7 +213,7 @@ async function transcribeAudio(audio: number[], mimeType: string, settings: Bwit
     body: formData,
   });
 
-  if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
+  if (!response.ok) throw new Error(`Bumi could not transcribe that (${response.status}).`);
   const data = (await response.json()) as { text?: string };
   return data.text?.trim() ?? "";
 }
@@ -164,7 +235,7 @@ async function speakText(text: string, settings: BwithuSettings) {
     }),
   });
 
-  if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
+  if (!response.ok) throw new Error(`Bumi could not speak right now (${response.status}).`);
   const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
   const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
   return { bytes, mimeType: contentType };
@@ -216,7 +287,7 @@ async function createRealtimeSecret(settings: BwithuSettings) {
     }),
   });
 
-  if (!response.ok) throw new Error(`B could not start realtime voice (${response.status}).`);
+  if (!response.ok) throw new Error(`Bumi could not start realtime voice (${response.status}).`);
   return response.json();
 }
 
@@ -247,11 +318,17 @@ async function loadStoredSettings(fallback: BwithuSettings): Promise<BwithuSetti
   try {
     const stored = await chromeApi.storage.local.get("bwithu.settings");
     const saved = (stored["bwithu.settings"] as Partial<BwithuSettings> | undefined) ?? {};
-    const savedWithoutBlankKey = saved.apiKey ? saved : { ...saved, apiKey: undefined };
-    return { ...fallback, ...savedWithoutBlankKey };
+    return { ...fallback, ...withoutBlankProviderKeys(saved) };
   } catch {
     return fallback;
   }
+}
+
+function withoutBlankProviderKeys(settings: Partial<BwithuSettings>): Partial<BwithuSettings> {
+  const next = { ...settings };
+  if (!next.apiKey) delete next.apiKey;
+  if (!next.braveApiKey) delete next.braveApiKey;
+  return next;
 }
 
 function normalizeBrainReply(content: string, originalText: string): BrainReply {
@@ -311,6 +388,29 @@ function parseLocalCommand(text: string): BrowserAction | null {
   }
 
   return null;
+}
+
+function getSearchQuery(text: string) {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (!trimmed) return "";
+
+  if (/^(open|switch|hide)\b/.test(lower)) return "";
+
+  const currentIntent =
+    /\b(today|latest|current|now|recent|news|weather|price|pricing|stock|release|launched|happening|updated|2026)\b/.test(lower);
+  const researchIntent =
+    /\b(search the web|look up|find out|research|compare|best|recommend|reviews|who is|what is happening|tell me about)\b/.test(lower);
+
+  if (currentIntent || researchIntent) {
+    return trimmed.replace(/^search (for )?/i, "").replace(/^look up /i, "").trim();
+  }
+
+  return "";
+}
+
+function stripHtml(value: string) {
+  return value.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
 function stripCodeFence(content: string) {

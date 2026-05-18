@@ -10,19 +10,24 @@
 
 .bwithu-portal {
   position: fixed;
-  right: 46px;
-  bottom: 54px;
-  width: 112px;
-  height: 112px;
+  right: 74px;
+  bottom: 82px;
+  width: 196px;
+  height: 196px;
   pointer-events: none;
   border-radius: 50%;
   background:
+    radial-gradient(circle at 20% 28%, rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+    radial-gradient(circle at 78% 22%, rgba(196, 244, 255, 0.95) 0 3px, transparent 4px),
+    radial-gradient(circle at 72% 76%, rgba(255, 226, 146, 0.95) 0 2px, transparent 3px),
+    radial-gradient(circle at 28% 78%, rgba(206, 151, 255, 0.9) 0 2px, transparent 3px),
     radial-gradient(circle at 50% 50%, rgba(255, 245, 180, 0.95) 0 12%, rgba(255, 153, 72, 0.8) 24%, rgba(95, 52, 176, 0.72) 44%, rgba(24, 13, 60, 0) 68%);
   box-shadow:
     0 0 0 4px rgba(255, 240, 150, 0.45),
     0 0 34px rgba(255, 190, 80, 0.72),
     0 0 72px rgba(110, 70, 220, 0.65);
-  animation: bwithu-portal-open 1.15s ease-out forwards;
+  filter: blur(0.1px) saturate(1.18);
+  animation: bwithu-portal-open 1.35s cubic-bezier(0.19, 1, 0.22, 1) forwards;
 }
 
 .bwithu-portal::before,
@@ -288,12 +293,170 @@
 
 .bwithu-bear-stage {
   position: relative;
+  width: 230px;
+  height: 230px;
+  transform-origin: 50% 82%;
+}
+
+.bwithu-bear-shadow {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  bottom: 15px;
+  height: 25px;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(32, 19, 13, 0.3), rgba(32, 19, 13, 0) 70%);
+  border-radius: 50%;
+  transform: scaleX(1.08);
+  animation: bwithu-shadow-breathe 2.6s ease-in-out infinite;
+}
+
+.bwithu-glb-character {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 9px 16px rgba(48, 31, 18, 0.18));
+}
+
+.bwithu-glb-character canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.bwithu-quick-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.bwithu-quick-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(22, 16, 30, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 10px 26px rgba(16, 10, 24, 0.24);
+  backdrop-filter: blur(8px);
+}
+
+.bwithu-quick-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: #2b1b12;
+  background: rgba(255, 250, 235, 0.96);
+  border: 1px solid rgba(58, 35, 20, 0.24);
+  border-radius: 50%;
+  box-shadow:
+    0 2px 0 rgba(58, 35, 20, 0.22),
+    0 0 18px rgba(255, 229, 148, 0.28);
+  cursor: pointer;
+  font: 700 15px/1 ui-sans-serif, system-ui, sans-serif;
+}
+
+.bwithu-quick-button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 3px 0 rgba(58, 35, 20, 0.22),
+    0 0 22px rgba(142, 227, 255, 0.38);
+}
+
+.bwithu-quick-button--active,
+.bwithu-quick-button--recording {
+  color: #fff9e8;
+  background: #b33b2e;
+  animation: bwithu-pulse 0.85s infinite;
+}
+
+.bwithu-quick-button--yes {
+  color: #fff9e8;
+  background: #2f9b68;
+}
+
+.bwithu-quick-button--ghost {
+  opacity: 0.74;
+}
+
+.bwithu-quick-chat {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 36px;
+  gap: 5px;
+  width: 210px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255, 250, 235, 0.96);
+  border: 1px solid rgba(58, 35, 20, 0.2);
+  box-shadow: 0 12px 28px rgba(16, 10, 24, 0.2);
+}
+
+.bwithu-quick-chat input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: #2b1b12;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: 13px/1.2 ui-sans-serif, system-ui, sans-serif;
+}
+
+.bwithu-quick-chat button {
+  width: 32px;
+  height: 32px;
+  color: #fff9e8;
+  background: #7b3f1d;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.bwithu-bear-stage--curious {
+  filter: drop-shadow(0 0 10px rgba(120, 218, 255, 0.16));
+}
+
+.bwithu-bear-stage--happy,
+.bwithu-bear-stage--wave {
+  filter: drop-shadow(0 0 14px rgba(255, 202, 86, 0.26));
+}
+
+.bwithu-bear-stage--sleepy,
+.bwithu-bear-stage--sleep {
+  filter: saturate(0.88) brightness(0.94);
+}
+
+.bwithu-bear-stage--searching {
+  filter: drop-shadow(0 0 16px rgba(98, 173, 255, 0.28));
+}
+
+.bwithu-bear-stage--mood-excited .bwithu-bear-shadow {
+  animation-duration: 1.65s;
+}
+
+.bwithu-bear-stage--mood-sleepy .bwithu-bear-shadow {
+  opacity: 0.72;
+  animation-duration: 4s;
 }
 
 .bwithu-bear-stage--listen::before,
 .bwithu-bear-stage--listen::after,
 .bwithu-bear-stage--talk::before,
-.bwithu-bear-stage--talk::after {
+.bwithu-bear-stage--talk::after,
+.bwithu-bear-stage--searching::before,
+.bwithu-bear-stage--searching::after {
   content: "";
   position: absolute;
   inset: 15px;
@@ -311,6 +474,25 @@
 .bwithu-bear-stage--talk::before,
 .bwithu-bear-stage--talk::after {
   border-color: rgba(255, 182, 73, 0.74);
+}
+
+.bwithu-bear-stage--searching::before,
+.bwithu-bear-stage--searching::after {
+  border-color: rgba(97, 165, 255, 0.72);
+  border-style: dashed;
+  animation-duration: 0.95s;
+}
+
+@keyframes bwithu-shadow-breathe {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scaleX(1.02);
+  }
+  50% {
+    opacity: 0.48;
+    transform: scaleX(0.78);
+  }
 }
 
 @keyframes bwithu-wave-ring {
