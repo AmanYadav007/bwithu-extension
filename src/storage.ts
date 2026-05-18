@@ -9,8 +9,9 @@ export interface BearPosition {
 export interface BwithuSettings {
   apiKey: string;
   braveApiKey: string;
+  googleClientId: string;
   characterRenderer: "glb" | "sprite";
-  voiceId: "ara" | "eve" | "rex" | "sal" | "leo";
+  voiceId: "ara" | "rex";
   soundEnabled: boolean;
   voiceEnabled: boolean;
   wanderIntensity: "calm" | "curious" | "adventurous";
@@ -19,6 +20,7 @@ export interface BwithuSettings {
 export const DEFAULT_SETTINGS: BwithuSettings = {
   apiKey: "",
   braveApiKey: "",
+  googleClientId: "",
   characterRenderer: "glb",
   voiceId: "ara",
   soundEnabled: true,
@@ -105,6 +107,8 @@ function withoutBlankProviderKeys(settings?: Partial<BwithuSettings>): Partial<B
   const next = { ...settings };
   if (!next.apiKey) delete next.apiKey;
   if (!next.braveApiKey) delete next.braveApiKey;
+  if (!next.googleClientId) delete next.googleClientId;
+  if (next.voiceId && next.voiceId !== "ara" && next.voiceId !== "rex") delete next.voiceId;
   return next;
 }
 
@@ -130,12 +134,15 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
       XAI_API_KEY?: string;
       BRAVE_SEARCH_API_KEY?: string;
       BRAVE_API_KEY?: string;
+      GOOGLE_CLIENT_ID?: string;
       apiKey?: string;
       braveApiKey?: string;
+      googleClientId?: string;
     };
     return {
       apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
       braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
+      googleClientId: config.googleClientId ?? config.GOOGLE_CLIENT_ID ?? "",
     };
   } catch {
     return {};

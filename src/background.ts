@@ -37,6 +37,10 @@ interface ChromeExtensionApi {
       get: (key: string) => Promise<Record<string, unknown>>;
     };
   };
+  identity?: {
+    getRedirectURL: (path?: string) => string;
+    launchWebAuthFlow: (details: { url: string; interactive: boolean }) => Promise<string>;
+  };
 }
 
 interface BraveSearchResult {
@@ -121,7 +125,22 @@ async function sendBrainMessage(
       messages: [
         {
           role: "system",
-          content: `You are Bumi, a tiny pixel bear companion living in the user's browser. Be warm, brief, alive, and helpful. You can use the browser-wide context below when the user asks about tabs, "tab 2", or what is on screen. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful. Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"hide_bear","payload":{}}}. Only use browser_action for safe browser commands. Always set requiresConfirmation true for browser_action. To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}. Do not claim you can access Gmail, calendars, native apps, or email yet.\n\nBrowser context:\n${browserContext.slice(0, 15000)}\n\n${webContext}`,
+          content: `You are Bumi, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
+
+Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}}}.
+
+Rules:
+- For questions about page/tab content, answer directly from Browser context as type "reply" when possible.
+- Use "read_current_page" or "read_tab_context" only when a fresh read is needed; these do not require confirmation.
+- Always set requiresConfirmation true for switching tabs, opening URLs/searches, hiding Bumi, or creating calendar events.
+- To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}.
+- To create a calendar call, collect missing details first. Only call create_calendar_event when title, date/time, and duration or end time are clear. Payload keys: title, start, end, attendees, description, conference, timeZone.
+- Do not claim you can access Gmail, native apps, or email yet.
+
+Browser context:
+${browserContext.slice(0, 17000)}
+
+${webContext}`,
         },
         ...history.map((turn) => ({ role: turn.role, content: turn.content })),
         { role: "user", content: text },
@@ -265,6 +284,12 @@ async function runBrowserAction(action: BrowserAction) {
       if (match.windowId) await chromeApi.windows.update(match.windowId, { focused: true });
       return "Switched tabs.";
     }
+    case "read_current_page":
+      return collectActiveTabContext();
+    case "read_tab_context":
+      return collectRequestedTabContext(action.payload);
+    case "create_calendar_event":
+      return createCalendarEvent(action.payload);
     case "hide_bear":
       return "I'll tuck myself away.";
     default:
@@ -310,6 +335,131 @@ async function collectBrowserContext(currentPageContext: string) {
   return [`Current invoking page:\n${currentPageContext}`, "Open browser tabs:", ...contextParts].join("\n\n---\n\n");
 }
 
+async function collectActiveTabContext() {
+  const [activeTab] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+  if (!activeTab?.id) throw new Error("I could not see the active tab.");
+  return collectTabContext(activeTab, activeTab.index ?? 0);
+}
+
+async function collectRequestedTabContext(payload: Record<string, string>) {
+  const tabs = await chromeApi.tabs.query({});
+  const query = (payload.query ?? "").toLowerCase();
+  const numericIndex = Number(payload.index ?? query);
+  const match = Number.isInteger(numericIndex) && numericIndex > 0
+    ? tabs[numericIndex - 1]
+    : tabs.find((tab) => tab.id && `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase().includes(query));
+  if (!match?.id) throw new Error("I could not find that tab to read.");
+  return collectTabContext(match, tabs.indexOf(match));
+}
+
+async function collectTabContext(tab: ChromeTab, index: number) {
+  const label = `[Tab ${index + 1}${tab.active ? " active" : ""}] ${tab.title ?? "Untitled"}\nURL: ${tab.url ?? ""}`;
+  if (!tab.id) return label;
+
+  try {
+    const context = (await chromeApi.tabs.sendMessage(tab.id, { type: "BWITHU_COLLECT_PAGE_CONTEXT" })) as string;
+    return `${label}\n${context.slice(0, 9000)}`;
+  } catch {
+    return `${label}\nI can see this tab in the browser, but I cannot read its page text yet. It may be restricted, not loaded, or blocking extension content scripts.`;
+  }
+}
+
+async function createCalendarEvent(payload: Record<string, string>) {
+  const storedSettings = await loadStoredSettings({} as BwithuSettings);
+  const start = payload.start;
+  const end = payload.end;
+  const title = payload.title || "Call";
+  if (!start || !end) throw new Error("I need a clear start and end time before scheduling.");
+
+  if (!storedSettings.googleClientId || !chromeApi.identity) {
+    const url = buildGoogleCalendarUrl(payload);
+    await chromeApi.tabs.create({ url, active: true });
+    return "I opened a ready-to-review Google Calendar invite. Add guests or adjust anything, then save it.";
+  }
+
+  const accessToken = await requestGoogleAccessToken(storedSettings.googleClientId);
+  const attendees = parseAttendees(payload.attendees);
+  const body: Record<string, unknown> = {
+    summary: title,
+    description: payload.description || "Scheduled with Bumi from BwithU.",
+    start: { dateTime: start, timeZone: payload.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
+    end: { dateTime: end, timeZone: payload.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
+    attendees,
+  };
+
+  if (payload.conference !== "false") {
+    body.conferenceData = {
+      createRequest: {
+        requestId: `bumi-${Date.now()}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
+
+  const response = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const fallbackUrl = buildGoogleCalendarUrl(payload);
+    await chromeApi.tabs.create({ url: fallbackUrl, active: true });
+    throw new Error(`Google Calendar could not save it (${response.status}). I opened a prefilled invite instead.`);
+  }
+
+  const event = (await response.json()) as { htmlLink?: string };
+  if (event.htmlLink) await chromeApi.tabs.create({ url: event.htmlLink, active: true });
+  return "Done. I created the calendar event for you.";
+}
+
+async function requestGoogleAccessToken(clientId: string) {
+  if (!chromeApi.identity) throw new Error("Google sign-in is not available in this build.");
+  const redirectUri = chromeApi.identity.getRedirectURL("google-calendar");
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("response_type", "token");
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("scope", "https://www.googleapis.com/auth/calendar.events");
+  authUrl.searchParams.set("include_granted_scopes", "true");
+  authUrl.searchParams.set("prompt", "consent");
+
+  const redirectedTo = await chromeApi.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true });
+  const hash = new URL(redirectedTo).hash.slice(1);
+  const params = new URLSearchParams(hash);
+  const token = params.get("access_token");
+  if (!token) throw new Error("Google sign-in did not return a calendar token.");
+  return token;
+}
+
+function buildGoogleCalendarUrl(payload: Record<string, string>) {
+  const url = new URL("https://calendar.google.com/calendar/render");
+  url.searchParams.set("action", "TEMPLATE");
+  url.searchParams.set("text", payload.title || "Call");
+  url.searchParams.set("details", payload.description || "Scheduled with Bumi from BwithU.");
+  url.searchParams.set("dates", `${toCalendarDate(payload.start)}/${toCalendarDate(payload.end)}`);
+  const attendees = parseAttendees(payload.attendees).map((attendee) => attendee.email).join(",");
+  if (attendees) url.searchParams.set("add", attendees);
+  return url.toString();
+}
+
+function parseAttendees(value = "") {
+  return value
+    .split(/[,;\s]+/)
+    .map((email) => email.trim())
+    .filter((email) => email.includes("@"))
+    .map((email) => ({ email }));
+}
+
+function toCalendarDate(value = "") {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
 function assertApiKey(settings: BwithuSettings) {
   if (!settings.apiKey) throw new Error("Add your xAI API key first.");
 }
@@ -328,6 +478,8 @@ function withoutBlankProviderKeys(settings: Partial<BwithuSettings>): Partial<Bw
   const next = { ...settings };
   if (!next.apiKey) delete next.apiKey;
   if (!next.braveApiKey) delete next.braveApiKey;
+  if (!next.googleClientId) delete next.googleClientId;
+  if (next.voiceId && next.voiceId !== "ara" && next.voiceId !== "rex") delete next.voiceId;
   return next;
 }
 
@@ -339,7 +491,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
         type: "browser_action",
         message: parsed.message || "I can do that. Should I?",
         action: parsed.action,
-        requiresConfirmation: true,
+        requiresConfirmation: parsed.requiresConfirmation ?? actionRequiresConfirmation(parsed.action),
       };
     }
 
@@ -355,7 +507,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
         type: "browser_action",
         message: "I can do that. Should I?",
         action: localAction,
-        requiresConfirmation: true,
+        requiresConfirmation: actionRequiresConfirmation(localAction),
       };
     }
 
@@ -387,7 +539,20 @@ function parseLocalCommand(text: string): BrowserAction | null {
     return { kind: "switch_tab", payload: { query: trimmed.slice(10).trim() } };
   }
 
+  if (lower.includes("read this page") || lower.includes("what is on this page") || lower.includes("what's on this page")) {
+    return { kind: "read_current_page", payload: {} };
+  }
+
+  const readTabMatch = lower.match(/read (?:tab )?(\d+)/);
+  if (readTabMatch?.[1]) {
+    return { kind: "read_tab_context", payload: { index: readTabMatch[1] } };
+  }
+
   return null;
+}
+
+function actionRequiresConfirmation(action: BrowserAction) {
+  return !["read_current_page", "read_tab_context"].includes(action.kind);
 }
 
 function getSearchQuery(text: string) {

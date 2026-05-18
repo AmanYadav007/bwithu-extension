@@ -13,6 +13,7 @@ if (!fs.existsSync(envPath)) {
 const env = fs.readFileSync(envPath, "utf8");
 const xaiMatch = env.match(/^XAI_API_KEY=(.+)$/m);
 const braveMatch = env.match(/^(?:BRAVE_SEARCH_API_KEY|BRAVE_API_KEY)=(.+)$/m);
+const googleClientMatch = env.match(/^GOOGLE_CLIENT_ID=(.+)$/m);
 
 if (!xaiMatch?.[1]) {
   console.error("XAI_API_KEY was not found in .env.");
@@ -25,6 +26,7 @@ fs.writeFileSync(
     {
       XAI_API_KEY: xaiMatch[1].trim(),
       ...(braveMatch?.[1] ? { BRAVE_SEARCH_API_KEY: braveMatch[1].trim() } : {}),
+      ...(googleClientMatch?.[1] ? { GOOGLE_CLIENT_ID: googleClientMatch[1].trim() } : {}),
     },
     null,
     2,

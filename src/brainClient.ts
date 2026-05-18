@@ -1,7 +1,14 @@
 import type { BwithuSettings } from "./storage";
 
 export interface BrowserAction {
-  kind: "open_url" | "search" | "switch_tab" | "hide_bear";
+  kind:
+    | "open_url"
+    | "search"
+    | "switch_tab"
+    | "read_current_page"
+    | "read_tab_context"
+    | "create_calendar_event"
+    | "hide_bear";
   payload: Record<string, string>;
 }
 

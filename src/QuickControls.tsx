@@ -6,7 +6,9 @@ import type { BrowserAction } from "./brainClient";
 interface QuickControlsProps {
   isRecording: boolean;
   pendingAction: BrowserAction | null;
+  voiceId: "ara" | "rex";
   onToggleRecording: () => void;
+  onToggleVoice: () => void;
   onSendMessage: (text: string) => void;
   onConfirmAction: () => void;
   onCancelAction: () => void;
@@ -16,7 +18,9 @@ interface QuickControlsProps {
 export default function QuickControls({
   isRecording,
   pendingAction,
+  voiceId,
   onToggleRecording,
+  onToggleVoice,
   onSendMessage,
   onConfirmAction,
   onCancelAction,
@@ -71,6 +75,9 @@ export default function QuickControls({
               aria-label="Type to Bumi"
             >
               ✎
+            </button>
+            <button type="button" className="bwithu-quick-button" onClick={onToggleVoice} aria-label="Toggle Bumi voice">
+              {voiceId === "ara" ? "F" : "M"}
             </button>
             <button type="button" className="bwithu-quick-button bwithu-quick-button--ghost" onClick={onClose} aria-label="Close controls">
               ×

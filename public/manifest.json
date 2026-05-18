@@ -2,8 +2,14 @@
   "manifest_version": 3,
   "name": "BwithU",
   "version": "0.1",
-  "permissions": ["storage", "tabs", "audioCapture"],
-  "host_permissions": ["<all_urls>", "https://api.x.ai/*", "https://api.search.brave.com/*"],
+  "permissions": ["storage", "tabs", "audioCapture", "identity"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.x.ai/*",
+    "https://api.search.brave.com/*",
+    "https://accounts.google.com/*",
+    "https://www.googleapis.com/*"
+  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
@@ -21,7 +27,7 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.x.ai wss://api.x.ai https://api.search.brave.com"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.x.ai wss://api.x.ai https://api.search.brave.com https://accounts.google.com https://www.googleapis.com"
   },
   "action": {
     "default_title": "Toggle Bumi",

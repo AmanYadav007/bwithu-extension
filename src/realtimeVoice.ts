@@ -23,6 +23,7 @@ export class RealtimeVoiceSession {
   private connected = false;
   private assistantText = "";
   private playTime = 0;
+  private activeSources = new Set<AudioBufferSourceNode>();
   private heardUserTranscript = false;
   private responseRequested = false;
   private readonly pageContext: string;
@@ -56,9 +57,12 @@ export class RealtimeVoiceSession {
 
   close() {
     this.stopMic();
+    this.stopPlayback();
     this.ws?.close();
     this.ws = null;
     this.connected = false;
+    void this.audioContext?.close();
+    this.audioContext = null;
   }
 
   private async startMic() {
@@ -67,8 +71,11 @@ export class RealtimeVoiceSession {
     if (this.audioContext.state === "suspended") await this.audioContext.resume();
     this.source = this.audioContext.createMediaStreamSource(this.stream);
     this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
+    const silentMonitor = this.audioContext.createGain();
+    silentMonitor.gain.value = 0;
     this.source.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
+    this.processor.connect(silentMonitor);
+    silentMonitor.connect(this.audioContext.destination);
 
     this.processor.onaudioprocess = (event) => {
       const input = event.inputBuffer.getChannelData(0);
@@ -102,11 +109,11 @@ export class RealtimeVoiceSession {
           type: "session.update",
           session: {
             voice: this.settings.voiceId,
-            instructions: `You are Bumi, a tiny living bear companion sharing the user's screen. Speak like a warm friend on a call: brief, natural, emotionally present, and helpful. Keep replies under two short sentences unless the user asks for more. Use the current webpage context when the user asks about what is on screen.\n\nCurrent webpage context:\n${this.pageContext.slice(0, 10000)}`,
+            instructions: `You are Bumi, a tiny living bear companion sharing the user's screen. Speak like a warm friend on a phone call: natural, emotionally present, and never robotic. Use short human phrases, tiny pauses, and warm acknowledgements like "mm", "okay", or "I see" when they fit. Keep most replies under two short sentences unless the user asks for more. If the user interrupts you, stop and listen. Use the current browser/page context when the user asks what is on screen or around the browser.\n\nCurrent browser context:\n${this.pageContext.slice(0, 12000)}`,
             turn_detection: {
               type: "server_vad",
-              threshold: 0.72,
-              silence_duration_ms: 650,
+              threshold: 0.68,
+              silence_duration_ms: 520,
               prefix_padding_ms: 333,
             },
             audio: {
@@ -145,6 +152,19 @@ export class RealtimeVoiceSession {
       return;
     }
 
+    if (type === "input_audio_buffer.speech_started") {
+      this.stopPlayback();
+      this.assistantText = "";
+      this.callbacks.onStatus("Bumi is listening...");
+      try {
+        if (this.responseRequested) this.ws?.send(JSON.stringify({ type: "response.cancel" }));
+      } catch {
+        // Some realtime-compatible providers may ignore cancellation.
+      }
+      this.responseRequested = false;
+      return;
+    }
+
     if (
       (type === "response.text.delta" || type === "response.output_text.delta" || type === "response.output_audio_transcript.delta") &&
       typeof event.delta === "string"
@@ -167,6 +187,7 @@ export class RealtimeVoiceSession {
       this.callbacks.onAssistantDone(this.assistantText.trim());
       this.assistantText = "";
       this.responseRequested = false;
+      this.heardUserTranscript = false;
       this.callbacks.onStatus("");
       return;
     }
@@ -193,11 +214,27 @@ export class RealtimeVoiceSession {
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(this.audioContext.destination);
+    source.addEventListener("ended", () => {
+      this.activeSources.delete(source);
+    }, { once: true });
 
     const now = this.audioContext.currentTime;
     this.playTime = Math.max(this.playTime, now);
     source.start(this.playTime);
+    this.activeSources.add(source);
     this.playTime += buffer.duration;
+  }
+
+  private stopPlayback() {
+    for (const source of this.activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // Source may have already ended.
+      }
+    }
+    this.activeSources.clear();
+    this.playTime = this.audioContext?.currentTime ?? 0;
   }
 }
 

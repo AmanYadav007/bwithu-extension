@@ -11,7 +11,7 @@ import { useBearStore } from "./bearStore";
 import { collectPageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
 import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
-import { DEFAULT_SETTINGS, loadSettings } from "./storage";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "./storage";
 import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
@@ -193,6 +193,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     }
   }, [settings]);
 
+  const updateVoice = useCallback((voiceId: BwithuSettings["voiceId"]) => {
+    setSettings((current) => {
+      const next = { ...current, voiceId };
+      void saveSettings(next);
+      return next;
+    });
+  }, []);
+
   const handleSpawnComplete = useCallback(() => {
     setBearState("intro");
     setShowIntro(true);
@@ -231,15 +239,19 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
       try {
         const reply = await sendTextMessage(text, settings, nextHistory, collectPageContext());
-        const assistantTurn: ConversationTurn = { role: "assistant", content: reply.message };
+        let assistantMessage = reply.message;
+        if (reply.type === "browser_action" && reply.action && !reply.requiresConfirmation) {
+          assistantMessage = await runBrowserAction(reply.action);
+        }
+        const assistantTurn: ConversationTurn = { role: "assistant", content: assistantMessage };
         setMessages([...nextHistory, assistantTurn].slice(-8));
-        setAssistantCaption(reply.message);
-        setSpeechText(reply.message);
-        setPendingAction(reply.type === "browser_action" && reply.action ? reply.action : null);
+        setAssistantCaption(assistantMessage);
+        setSpeechText(assistantMessage);
+        setPendingAction(reply.type === "browser_action" && reply.action && reply.requiresConfirmation ? reply.action : null);
         setStatus(reply.requiresConfirmation ? "Bumi needs your confirmation." : "");
         dispatchBehavior(needsSearch ? "searchEnded" : "messageEnded");
         if (settings.soundEnabled) playHappyChirp();
-        void playVoiceReply(reply.message);
+        void playVoiceReply(assistantMessage);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Bumi had trouble reaching Grok.";
         setStatus(message);
@@ -451,10 +463,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
                 <QuickControls
                   isRecording={isRecording}
                   pendingAction={pendingAction}
+                  voiceId={settings.voiceId}
                   onToggleRecording={() => {
                     if (isRecording) stopRecording();
                     else void startRecording();
                   }}
+                  onToggleVoice={() => updateVoice(settings.voiceId === "ara" ? "rex" : "ara")}
                   onSendMessage={handleSendMessage}
                   onConfirmAction={handleConfirmAction}
                   onCancelAction={() => setPendingAction(null)}

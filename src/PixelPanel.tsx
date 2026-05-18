@@ -142,6 +142,15 @@ export default function PixelPanel({
               type="password"
             />
           </label>
+          <label>
+            Google client
+            <input
+              value={settings.googleClientId}
+              onChange={(event) => onSettingsChange({ ...settings, googleClientId: event.target.value.trim() })}
+              placeholder="OAuth client ID"
+              type="password"
+            />
+          </label>
           <div className="bwithu-settings__row">
             <label>
               Body
@@ -159,13 +168,10 @@ export default function PixelPanel({
               Voice
               <select
                 value={settings.voiceId}
-                onChange={(event) => onSettingsChange({ ...settings, voiceId: event.target.value as BwithuSettings["voiceId"] })}
+              onChange={(event) => onSettingsChange({ ...settings, voiceId: event.target.value as BwithuSettings["voiceId"] })}
               >
-                <option value="ara">ara</option>
-                <option value="eve">eve</option>
-                <option value="rex">rex</option>
-                <option value="sal">sal</option>
-                <option value="leo">leo</option>
+                <option value="ara">female</option>
+                <option value="rex">male</option>
               </select>
             </label>
           </div>
@@ -225,6 +231,12 @@ function describeAction(action: BrowserAction) {
       return `search for ${action.payload.query}`;
     case "switch_tab":
       return `switch to ${action.payload.query}`;
+    case "read_current_page":
+      return "read this page";
+    case "read_tab_context":
+      return `read tab ${action.payload.index || action.payload.query}`;
+    case "create_calendar_event":
+      return `schedule ${action.payload.title || "a call"}`;
     case "hide_bear":
       return "hide Bumi";
     default:
