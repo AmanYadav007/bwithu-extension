@@ -99,6 +99,19 @@ async function handleMessage(message: RuntimeMessage) {
   }
 }
 
+function getApiEndpoint(endpoint: string, settings: BwithuSettings): string {
+  if (settings.apiKey) {
+    if (endpoint === "chat") return "https://api.x.ai/v1/chat/completions";
+    if (endpoint === "transcribe") return "https://api.x.ai/v1/stt";
+    if (endpoint === "speak") return "https://api.x.ai/v1/tts";
+    if (endpoint === "realtime-secret") return "https://api.x.ai/v1/realtime/client_secrets";
+    if (endpoint === "search") return "https://api.search.brave.com/res/v1/web/search";
+  }
+
+  const baseUrl = (settings.proxyUrl || "https://bwithu-proxy.vercel.app").replace(/\/$/, "");
+  return `${baseUrl}/api/${endpoint}`;
+}
+
 async function sendBrainMessage(
   text: string,
   settings: BwithuSettings,
@@ -111,21 +124,15 @@ async function sendBrainMessage(
   const browserContext = await collectBrowserContext(pageContext);
   const searchQuery = getSearchQuery(text);
   const webContext = searchQuery ? await collectWebContext(searchQuery, storedSettings) : "";
-  const response = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${storedSettings.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "grok-4.3",
-      temperature: 0.7,
-      reasoning_effort: "none",
-      max_tokens: 140,
-      messages: [
-        {
-          role: "system",
-          content: `You are Bumi, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
+  const requestBody = {
+    model: "grok-4.3",
+    temperature: 0.7,
+    reasoning_effort: "none",
+    max_tokens: 140,
+    messages: [
+      {
+        role: "system",
+        content: `You are Bumi, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
 
 Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}}}.
 
@@ -142,11 +149,31 @@ ${browserContext.slice(0, 17000)}
 
 ${webContext}`,
         },
-        ...history.map((turn) => ({ role: turn.role, content: turn.content })),
-        { role: "user", content: text },
-      ],
-    }),
-  });
+      ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+      { role: "user", content: text },
+    ],
+  };
+
+  let response: Response;
+  if (storedSettings.apiKey) {
+    response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${storedSettings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } else {
+    const proxyUrl = getApiEndpoint("chat", storedSettings);
+    response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  }
 
   if (!response.ok) throw new Error(`Grok could not think right now (${response.status}).`);
 
@@ -156,12 +183,13 @@ ${webContext}`,
 }
 
 async function collectWebContext(query: string, settings: BwithuSettings) {
-  if (!settings.braveApiKey) {
+  const storedSettings = await loadStoredSettings(settings);
+  if (!storedSettings.braveApiKey && !storedSettings.proxyUrl) {
     return `Web search requested for "${query}", but no Brave Search API key is configured. Tell the user to add BRAVE_SEARCH_API_KEY in .env for local dev or paste it in Bumi settings.`;
   }
 
   try {
-    const results = await braveSearch(query, settings.braveApiKey);
+    const results = await braveSearch(query, storedSettings);
     if (results.length === 0) return `Web search for "${query}" returned no useful results.`;
     return [
       `Fresh web search results from Brave for "${query}":`,
@@ -176,88 +204,151 @@ async function collectWebContext(query: string, settings: BwithuSettings) {
   }
 }
 
-async function braveSearch(query: string, apiKey: string): Promise<BraveSearchResult[]> {
-  const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", "5");
-  url.searchParams.set("country", "us");
-  url.searchParams.set("search_lang", "en");
-  url.searchParams.set("safesearch", "moderate");
-  url.searchParams.set("spellcheck", "1");
-  url.searchParams.set("extra_snippets", "1");
+async function braveSearch(query: string, settings: BwithuSettings): Promise<BraveSearchResult[]> {
+  if (settings.braveApiKey) {
+    const url = new URL("https://api.search.brave.com/res/v1/web/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("count", "5");
+    url.searchParams.set("country", "us");
+    url.searchParams.set("search_lang", "en");
+    url.searchParams.set("safesearch", "moderate");
+    url.searchParams.set("spellcheck", "1");
+    url.searchParams.set("extra_snippets", "1");
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": apiKey,
-    },
-  });
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": settings.braveApiKey,
+      },
+    });
 
-  if (!response.ok) throw new Error(`Brave Search could not look that up (${response.status}).`);
-  const data = (await response.json()) as {
-    web?: {
-      results?: Array<{
-        title?: string;
-        url?: string;
-        description?: string;
-        extra_snippets?: string[];
-        age?: string;
-      }>;
+    if (!response.ok) throw new Error(`Brave Search could not look that up (${response.status}).`);
+    const data = (await response.json()) as {
+      web?: {
+        results?: Array<{
+          title?: string;
+          url?: string;
+          description?: string;
+          extra_snippets?: string[];
+          age?: string;
+        }>;
+      };
     };
-  };
 
-  return (data.web?.results ?? [])
-    .filter((result) => result.title && result.url)
-    .slice(0, 5)
-    .map((result) => ({
-      title: stripHtml(result.title ?? "Untitled"),
-      url: result.url ?? "",
-      description: stripHtml([result.description, ...(result.extra_snippets ?? [])].filter(Boolean).join(" ")).slice(0, 900),
-      age: result.age,
-    }));
+    return (data.web?.results ?? [])
+      .filter((result) => result.title && result.url)
+      .slice(0, 5)
+      .map((result) => ({
+        title: stripHtml(result.title ?? "Untitled"),
+        url: result.url ?? "",
+        description: stripHtml([result.description, ...(result.extra_snippets ?? [])].filter(Boolean).join(" ")).slice(0, 900),
+        age: result.age,
+      }));
+  } else {
+    const proxyUrl = getApiEndpoint("search", settings);
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) throw new Error(`Brave Search could not look that up via proxy (${response.status}).`);
+    const data = (await response.json()) as {
+      web?: {
+        results?: Array<{
+          title?: string;
+          url?: string;
+          description?: string;
+          extra_snippets?: string[];
+          age?: string;
+        }>;
+      };
+    };
+
+    return (data.web?.results ?? [])
+      .filter((result) => result.title && result.url)
+      .slice(0, 5)
+      .map((result) => ({
+        title: stripHtml(result.title ?? "Untitled"),
+        url: result.url ?? "",
+        description: stripHtml([result.description, ...(result.extra_snippets ?? [])].filter(Boolean).join(" ")).slice(0, 900),
+        age: result.age,
+      }));
+  }
 }
 
 async function transcribeAudio(audio: number[], mimeType: string, settings: BwithuSettings) {
   const storedSettings = await loadStoredSettings(settings);
   assertApiKey(storedSettings);
 
-  const formData = new FormData();
-  formData.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), preferredAudioName(mimeType));
+  if (storedSettings.apiKey) {
+    const formData = new FormData();
+    formData.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), preferredAudioName(mimeType));
 
-  const response = await fetch("https://api.x.ai/v1/stt", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${storedSettings.apiKey}`,
-    },
-    body: formData,
-  });
+    const response = await fetch("https://api.x.ai/v1/stt", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${storedSettings.apiKey}`,
+      },
+      body: formData,
+    });
 
-  if (!response.ok) throw new Error(`Bumi could not transcribe that (${response.status}).`);
-  const data = (await response.json()) as { text?: string };
-  return data.text?.trim() ?? "";
+    if (!response.ok) throw new Error(`Bumi could not transcribe that (${response.status}).`);
+    const data = (await response.json()) as { text?: string };
+    return data.text?.trim() ?? "";
+  } else {
+    const proxyUrl = getApiEndpoint("transcribe", storedSettings);
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ audio, mimeType }),
+    });
+
+    if (!response.ok) throw new Error(`Bumi could not transcribe that via proxy (${response.status}).`);
+    const data = (await response.json()) as { text?: string };
+    return data.text?.trim() ?? "";
+  }
 }
 
 async function speakText(text: string, settings: BwithuSettings) {
   const storedSettings = await loadStoredSettings(settings);
   assertApiKey(storedSettings);
 
-  const response = await fetch("https://api.x.ai/v1/tts", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${storedSettings.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      text,
-      voice_id: storedSettings.voiceId,
-      language: "auto",
-    }),
-  });
+  if (storedSettings.apiKey) {
+    const response = await fetch("https://api.x.ai/v1/tts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${storedSettings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        voice_id: storedSettings.voiceId,
+        language: "auto",
+      }),
+    });
 
-  if (!response.ok) throw new Error(`Bumi could not speak right now (${response.status}).`);
-  const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
-  const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
-  return { bytes, mimeType: contentType };
+    if (!response.ok) throw new Error(`Bumi could not speak right now (${response.status}).`);
+    const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
+    const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
+    return { bytes, mimeType: contentType };
+  } else {
+    const proxyUrl = getApiEndpoint("speak", storedSettings);
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text, voiceId: storedSettings.voiceId }),
+    });
+
+    if (!response.ok) throw new Error(`Bumi could not speak right now via proxy (${response.status}).`);
+    return response.json() as Promise<{ bytes: number[]; mimeType: string }>;
+  }
 }
 
 async function runBrowserAction(action: BrowserAction) {
@@ -461,7 +552,9 @@ function toCalendarDate(value = "") {
 }
 
 function assertApiKey(settings: BwithuSettings) {
-  if (!settings.apiKey) throw new Error("Add your xAI API key first.");
+  if (!settings.apiKey && !settings.proxyUrl) {
+    throw new Error("Add your xAI API key or set up a proxy URL first.");
+  }
 }
 
 async function loadStoredSettings(fallback: BwithuSettings): Promise<BwithuSettings> {

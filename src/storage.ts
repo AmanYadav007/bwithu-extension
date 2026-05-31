@@ -15,6 +15,7 @@ export interface BwithuSettings {
   soundEnabled: boolean;
   voiceEnabled: boolean;
   wanderIntensity: "calm" | "curious" | "adventurous";
+  proxyUrl?: string;
 }
 
 export const DEFAULT_SETTINGS: BwithuSettings = {
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   soundEnabled: true,
   voiceEnabled: true,
   wanderIntensity: "adventurous",
+  proxyUrl: "",
 };
 
 interface ChromeLike {
@@ -135,14 +137,17 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
       BRAVE_SEARCH_API_KEY?: string;
       BRAVE_API_KEY?: string;
       GOOGLE_CLIENT_ID?: string;
+      BWITHU_PROXY_URL?: string;
       apiKey?: string;
       braveApiKey?: string;
       googleClientId?: string;
+      proxyUrl?: string;
     };
     return {
       apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
       braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
       googleClientId: config.googleClientId ?? config.GOOGLE_CLIENT_ID ?? "",
+      proxyUrl: config.proxyUrl ?? config.BWITHU_PROXY_URL ?? "",
     };
   } catch {
     return {};

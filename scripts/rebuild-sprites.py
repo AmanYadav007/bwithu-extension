@@ -4,10 +4,10 @@ rebuild-sprites.py
 Reads bear.png (1536×1024, single bear on white/transparent bg).
 Crops to bear content, then generates 4 sprite sheets with synthetic animation:
 
-  idle.png  — 4×128px frames — breathing loop (1px vertical shift)
-  blink.png — 3×128px frames — eyes open / half-closed / closed
-  wave.png  — 4×128px frames — gentle bob
-  spawn.png — 6×128px frames — scale-in appearance sequence
+  idle.png  - 4×128px frames - breathing loop (1px vertical shift)
+  blink.png - 3×128px frames - eyes open / half-closed / closed
+  wave.png  - 4×128px frames - gentle bob
+  spawn.png - 6×128px frames - scale-in appearance sequence
 
 Run from project root: python3 scripts/rebuild-sprites.py
 """
@@ -153,7 +153,7 @@ print(f"  Cropped: {bear.width}×{bear.height}")
 
 base = bear_to_frame(bear)
 
-# ── idle.png — 4 frames, subtle breathing ─────────────────────────────────
+# ── idle.png - 4 frames, subtle breathing ─────────────────────────────────
 print("Generating idle.png…")
 idle_frames = [
     bear_to_frame(bear, y_shift=0),
@@ -165,7 +165,7 @@ idle = make_strip(idle_frames)
 idle.save(PUBLIC / "idle.png")
 print(f"  ✓ {idle.width}×{idle.height} (4 frames)")
 
-# ── blink.png — 3 frames, eyes open→half→closed ───────────────────────────
+# ── blink.png - 3 frames, eyes open→half→closed ───────────────────────────
 print("Generating blink.png…")
 blink_base = bear_to_frame(bear)
 blink_frames = [
@@ -177,7 +177,7 @@ blink = make_strip(blink_frames)
 blink.save(PUBLIC / "blink.png")
 print(f"  ✓ {blink.width}×{blink.height} (3 frames)")
 
-# ── wave.png — 4 frames, gentle bob ─────────────────────────────────────
+# ── wave.png - 4 frames, gentle bob ─────────────────────────────────────
 print("Generating wave.png…")
 wave_frames = [
     bear_to_frame(bear, y_shift=0),
@@ -189,7 +189,7 @@ wave = make_strip(wave_frames)
 wave.save(PUBLIC / "wave.png")
 print(f"  ✓ {wave.width}×{wave.height} (4 frames)")
 
-# ── spawn.png — 6 frames, scale-in ───────────────────────────────────────
+# ── spawn.png - 6 frames, scale-in ───────────────────────────────────────
 print("Generating spawn.png…")
 spawn_configs = [
     (0.15, 0.25),

@@ -4,7 +4,7 @@
 // count by testing clean integer divisors, crops each frame to its bear,
 // converts white backgrounds to transparent, scales to 128×128, and saves
 // new horizontal strip PNGs ready for SpritePlayer.tsx.
-// Zero npm dependencies — only Node.js built-ins.
+// Zero npm dependencies - only Node.js built-ins.
 
 'use strict';
 
@@ -203,7 +203,7 @@ for(const name of ['idle','blink','wave','spawn']){
   for(let fi=0;fi<nFrames;fi++){
     const fx0=fi*frameW, fx1=fx0+frameW;
     const b=contentBounds(rgba,width,height,fx0,fx1);
-    if(b.minX>b.maxX){console.log(`  Frame ${fi}: empty — skip`);continue;}
+    if(b.minX>b.maxX){console.log(`  Frame ${fi}: empty - skip`);continue;}
     const bw=b.maxX-b.minX+1,bh=b.maxY-b.minY+1;
     const scaled=cropAndScale(rgba,width,height,b.minX,b.minY,bw,bh,FRAME_SIZE);
     const dx=fi*FRAME_SIZE;

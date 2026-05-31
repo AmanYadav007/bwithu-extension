@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "seed:key": "node scripts/write-local-config.cjs",
-    "serve": "vite preview --port 3000"
+    "serve": "vite preview --port 3000",
+    "zip": "npm run build && zip -r bwithu-extension.zip dist"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.0",

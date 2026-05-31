@@ -99,7 +99,7 @@ const idle=makeStrip(idleFrames);
 fs.writeFileSync(path.join(PUBLIC,'idle.png'),encodePNG(idle.w,idle.h,idle.buf));
 console.log(`  ✓ ${idle.w}×${idle.h}`);
 
-// ── blink.png: 3 frames — paint over eyes to simulate blink ──────────────
+// ── blink.png: 3 frames - paint over eyes to simulate blink ──────────────
 // Find approximate eye row: scan the upper half of the bear for near-black clusters
 console.log('\nGenerating blink.png (3 frames)…');
 
@@ -116,7 +116,7 @@ function blinkFrame(eyeClose){
       const i=(y*128+x)*4;
       const r=frame[i],g=frame[i+1],b_=frame[i+2],a=frame[i+3];
       if(a>100&&r<100&&g<80&&b_<70){
-        // This is an eye pixel — replace based on eyeClose
+        // This is an eye pixel - replace based on eyeClose
         if(eyeClose===1){ // half: keep bottom half of eye shape
           // Cover top pixels of eye with fur
           frame[i]=FUR[0];frame[i+1]=FUR[1];frame[i+2]=FUR[2];frame[i+3]=FUR[3];
@@ -133,7 +133,7 @@ const blink=makeStrip(blinkFrames);
 fs.writeFileSync(path.join(PUBLIC,'blink.png'),encodePNG(blink.w,blink.h,blink.buf));
 console.log(`  ✓ ${blink.w}×${blink.h}`);
 
-// ── wave.png: 4 frames — bear at normal, slight up, slight right-lean, down ─
+// ── wave.png: 4 frames - bear at normal, slight up, slight right-lean, down ─
 console.log('\nGenerating wave.png (4 frames)…');
 const waveShifts=[0,-2,-1,1];
 const waveFrames=waveShifts.map(s=>scaleIntoFrame(bear,bW,bH,b.x0,b.y0,b.w,b.h,128,s));
@@ -141,7 +141,7 @@ const wave=makeStrip(waveFrames);
 fs.writeFileSync(path.join(PUBLIC,'wave.png'),encodePNG(wave.w,wave.h,wave.buf));
 console.log(`  ✓ ${wave.w}×${wave.h}`);
 
-// ── spawn.png: 6 frames — bear scales in from tiny to full ───────────────
+// ── spawn.png: 6 frames - bear scales in from tiny to full ───────────────
 console.log('\nGenerating spawn.png (6 frames)…');
 // Frame scales: 0.15, 0.30, 0.50, 0.70, 0.88, 1.0
 // alpha also fades in
@@ -175,10 +175,10 @@ fs.writeFileSync(path.join(PUBLIC,'spawn.png'),encodePNG(spawn.w,spawn.h,spawn.b
 console.log(`  ✓ ${spawn.w}×${spawn.h}`);
 
 console.log('\nDone. Sprite sheets:');
-console.log('  idle.png  — 4 frames (128×128 each) — breathing loop');
-console.log('  blink.png — 3 frames (128×128 each) — open/half/closed');
-console.log('  wave.png  — 4 frames (128×128 each) — gentle bob');
-console.log('  spawn.png — 6 frames (128×128 each) — scale-in appear');
+console.log('  idle.png  - 4 frames (128×128 each) - breathing loop');
+console.log('  blink.png - 3 frames (128×128 each) - open/half/closed');
+console.log('  wave.png  - 4 frames (128×128 each) - gentle bob');
+console.log('  spawn.png - 6 frames (128×128 each) - scale-in appear');
 console.log('\nUpdate animationStates.ts:');
 console.log('  idle:  frameCount:4');
 console.log('  blink: frameCount:3');

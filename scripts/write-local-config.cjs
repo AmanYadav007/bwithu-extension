@@ -14,19 +14,16 @@ const env = fs.readFileSync(envPath, "utf8");
 const xaiMatch = env.match(/^XAI_API_KEY=(.+)$/m);
 const braveMatch = env.match(/^(?:BRAVE_SEARCH_API_KEY|BRAVE_API_KEY)=(.+)$/m);
 const googleClientMatch = env.match(/^GOOGLE_CLIENT_ID=(.+)$/m);
-
-if (!xaiMatch?.[1]) {
-  console.error("XAI_API_KEY was not found in .env.");
-  process.exit(1);
-}
+const proxyMatch = env.match(/^BWITHU_PROXY_URL=(.+)$/m);
 
 fs.writeFileSync(
   outPath,
   `${JSON.stringify(
     {
-      XAI_API_KEY: xaiMatch[1].trim(),
+      ...(xaiMatch?.[1] ? { XAI_API_KEY: xaiMatch[1].trim() } : {}),
       ...(braveMatch?.[1] ? { BRAVE_SEARCH_API_KEY: braveMatch[1].trim() } : {}),
       ...(googleClientMatch?.[1] ? { GOOGLE_CLIENT_ID: googleClientMatch[1].trim() } : {}),
+      ...(proxyMatch?.[1] ? { BWITHU_PROXY_URL: proxyMatch[1].trim() } : {}),
     },
     null,
     2,
