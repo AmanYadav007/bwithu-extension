@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
-import { copyFileSync, existsSync, unlinkSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -13,11 +13,26 @@ export default defineConfig({
         // Copy manifest.json
         copyFileSync('public/manifest.json', 'dist/manifest.json')
 
-        // Safety check: Wipe local-config.json from production build folder
-        // so developer API keys are never packaged for the web store!
+        // Safety check: Strip private keys from local-config.json inside dist build folder
+        // so developer API keys are never packaged for the web store, while keeping BWITHU_PROXY_URL!
         if (existsSync('dist/local-config.json')) {
-          unlinkSync('dist/local-config.json');
-          console.log('Wiped local-config.json from build output folder for store safety.');
+          try {
+            const raw = readFileSync('dist/local-config.json', 'utf8');
+            const config = JSON.parse(raw);
+            delete config.XAI_API_KEY;
+            delete config.BRAVE_SEARCH_API_KEY;
+            delete config.BRAVE_API_KEY;
+            delete config.apiKey;
+            delete config.braveApiKey;
+
+            writeFileSync('dist/local-config.json', JSON.stringify(config, null, 2) + '\n');
+            console.log('Stripped secret keys from build local-config.json while keeping public proxy URL.');
+          } catch {
+            // fallback: delete file if parse fails
+            try {
+              unlinkSync('dist/local-config.json');
+            } catch {}
+          }
         }
       }
     }
