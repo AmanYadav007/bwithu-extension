@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import GLBCharacter from "./GLBCharacter";
 import SpritePlayer from "./SpritePlayer";
 import SpeechBubble from "./SpeechBubble";
+import InfoDisplay from "./InfoDisplay";
 import { animationConfigs, INTRO_TEXT } from "./animationStates";
 import type { BearState } from "./animationStates";
 import type { BearMood } from "./behaviorController";
@@ -27,6 +28,12 @@ interface BearProps {
   settings: BwithuSettings;
   mood: BearMood;
   panelOpen: boolean;
+  display?: {
+    kind: "weather" | "search" | "info";
+    title: string;
+    content: string;
+  } | null;
+  onCloseDisplay?: () => void;
   onSpawnComplete: () => void;
   onIntroComplete: () => void;
   onLoopComplete: () => void;
@@ -101,6 +108,8 @@ export default function Bear({
   settings,
   mood,
   panelOpen,
+  display,
+  onCloseDisplay,
   onSpawnComplete,
   onIntroComplete,
   onLoopComplete,
@@ -262,6 +271,14 @@ export default function Bear({
         <div className="bwithu-bear-shadow" aria-hidden="true" />
         {(showIntro || speechText) && (
           <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} />
+        )}
+        {display && onCloseDisplay && (
+          <InfoDisplay
+            key={display.content}
+            display={display}
+            onClose={onCloseDisplay}
+            position={x.get() > window.innerWidth / 2 ? "left" : "right"}
+          />
         )}
         {controls}
         {useGlbRenderer ? (

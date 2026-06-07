@@ -17,6 +17,11 @@ export interface BrainReply {
   message: string;
   action?: BrowserAction;
   requiresConfirmation: boolean;
+  display?: {
+    kind: "weather" | "search" | "info";
+    title: string;
+    content: string;
+  };
 }
 
 export interface ConversationTurn {

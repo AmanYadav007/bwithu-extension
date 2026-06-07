@@ -11,7 +11,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "xAI API key not configured on BWithU proxy server." });
+    return res
+      .status(500)
+      .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
   try {
@@ -35,7 +37,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      return res.status(response.status).json({ error: `xAI TTS Error: ${errorText}` });
+      return res
+        .status(response.status)
+        .json({ error: `xAI TTS Error: ${errorText}` });
     }
 
     const contentType = response.headers.get("Content-Type") || "audio/mpeg";
@@ -44,7 +48,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ bytes, mimeType: contentType });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal Proxy Failure during TTS";
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Internal Proxy Failure during TTS";
     return res.status(500).json({ error: message });
   }
 }

@@ -11,7 +11,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "xAI API key not configured on BWithU proxy server." });
+    return res
+      .status(500)
+      .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
   try {
@@ -26,13 +28,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      return res.status(response.status).json({ error: `xAI API Error: ${errorText}` });
+      return res
+        .status(response.status)
+        .json({ error: `xAI API Error: ${errorText}` });
     }
 
     const data = await response.json();
     return res.status(200).json(data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Internal Proxy Failure";
+    const message =
+      error instanceof Error ? error.message : "Internal Proxy Failure";
     return res.status(500).json({ error: message });
   }
 }

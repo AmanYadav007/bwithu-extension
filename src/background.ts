@@ -134,9 +134,11 @@ async function sendBrainMessage(
         role: "system",
         content: `You are Bumi, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
 
-Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}}}.
+Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}},"display":{"kind":"weather"|"search"|"info","title":"Display Title","content":"structured text details"}}.
 
 Rules:
+- If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list) to be shown on Bumi's sliding TV screen.
+- Only return a "search" action (Google search tab) if the user explicitly commands you to search the web in a new tab (e.g. "open a google search for X").
 - For questions about page/tab content, answer directly from Browser context as type "reply" when possible.
 - Use "read_current_page" or "read_tab_context" only when a fresh read is needed; these do not require confirmation.
 - Always set requiresConfirmation true for switching tabs, opening URLs/searches, hiding Bumi, or creating calendar events.
@@ -148,7 +150,7 @@ Browser context:
 ${browserContext.slice(0, 17000)}
 
 ${webContext}`,
-        },
+      },
       ...history.map((turn) => ({ role: turn.role, content: turn.content })),
       { role: "user", content: text },
     ],
@@ -585,6 +587,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
         message: parsed.message || "I can do that. Should I?",
         action: parsed.action,
         requiresConfirmation: parsed.requiresConfirmation ?? actionRequiresConfirmation(parsed.action),
+        display: parsed.display,
       };
     }
 
@@ -592,6 +595,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
       type: "reply",
       message: parsed.message || content || "I'm here.",
       requiresConfirmation: false,
+      display: parsed.display,
     };
   } catch {
     const localAction = parseLocalCommand(originalText);

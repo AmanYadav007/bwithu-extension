@@ -508,3 +508,216 @@
     transform: scale(1.38);
   }
 }
+
+/* --- Holographic TV Info Screen Styles --- */
+.bwithu-tv-display {
+  border-radius: 14px;
+  background: rgba(16, 14, 23, 0.88);
+  border: 1.5px solid rgba(0, 242, 254, 0.35);
+  box-shadow: 
+    0 16px 40px rgba(10, 8, 16, 0.6), 
+    0 0 24px rgba(0, 242, 254, 0.18);
+  backdrop-filter: blur(18px);
+  z-index: 2;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  color: #f1f5f9;
+}
+
+.bwithu-tv-display--left {
+  border-image: linear-gradient(135deg, rgba(0, 242, 254, 0.6), rgba(185, 43, 39, 0.2)) 1;
+}
+
+.bwithu-tv-display--right {
+  border-image: linear-gradient(135deg, rgba(185, 43, 39, 0.2), rgba(0, 242, 254, 0.6)) 1;
+}
+
+.bwithu-tv-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%);
+  background-size: 100% 3.5px;
+  opacity: 0.12;
+  z-index: 4;
+}
+
+.bwithu-tv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(25, 22, 38, 0.65);
+  border-bottom: 1.2px dashed rgba(0, 242, 254, 0.22);
+}
+
+.bwithu-tv-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bwithu-tv-status__led {
+  width: 7px;
+  height: 7px;
+  background-color: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #10b981;
+  animation: bwithu-tv-led-blink 1.4s infinite ease-in-out;
+}
+
+.bwithu-tv-status__text {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #00f2fe;
+}
+
+.bwithu-tv-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #e2e8f0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwithu-tv-close {
+  background: transparent;
+  border: 0;
+  color: #94a3b8;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0 3px;
+  transition: color 0.15s;
+  line-height: 1;
+}
+
+.bwithu-tv-close:hover {
+  color: #ef4444;
+}
+
+.bwithu-tv-content {
+  flex: 1;
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.42;
+  max-height: 220px;
+}
+
+.bwithu-tv-weather-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: rgba(0, 242, 254, 0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 242, 254, 0.14);
+}
+
+.bwithu-tv-weather-main__emoji {
+  font-size: 24px;
+}
+
+.bwithu-tv-weather-main__text {
+  font-weight: 700;
+  font-size: 14px;
+  color: #00f2fe;
+}
+
+.bwithu-tv-weather-grid-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4.5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bwithu-tv-weather-grid-item__label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.bwithu-tv-weather-grid-item__value {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.bwithu-tv-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bwithu-tv-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.bwithu-tv-list-item__icon {
+  font-size: 13px;
+  line-height: 1;
+  margin-top: 1.5px;
+}
+
+.bwithu-tv-list-item__bullet {
+  width: 5px;
+  height: 5px;
+  background: #00f2fe;
+  box-shadow: 0 0 6px #00f2fe;
+  border-radius: 50%;
+  margin-top: 5.5px;
+  flex-shrink: 0;
+}
+
+.bwithu-tv-list-item__text {
+  color: #e2e8f0;
+  font-size: 11.5px;
+}
+
+.bwithu-tv-display.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.bwithu-tv-display.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bwithu-tv-display.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 254, 0.2);
+  border-radius: 10px;
+}
+
+.bwithu-tv-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(25, 22, 38, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 8px;
+  letter-spacing: 0.6px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.bwithu-tv-footer__scan {
+  color: rgba(16, 185, 129, 0.78);
+}
+
+@keyframes bwithu-tv-led-blink {
+  0%, 100% {
+    opacity: 0.35;
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.2);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 9px #10b981;
+  }
+}

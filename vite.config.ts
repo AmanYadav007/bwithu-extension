@@ -31,7 +31,9 @@ export default defineConfig({
             // fallback: delete file if parse fails
             try {
               unlinkSync('dist/local-config.json');
-            } catch {}
+            } catch {
+              // Ignore fallback delete errors
+            }
           }
         }
       }

@@ -5,7 +5,7 @@ import QuickControls from "./QuickControls";
 import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
 import type { BehaviorEvent } from "./behaviorController";
-import type { BrowserAction, ConversationTurn } from "./brainClient";
+import type { BrowserAction, BrainReply, ConversationTurn } from "./brainClient";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { useBearStore } from "./bearStore";
 import { collectPageContext } from "./pageContext";
@@ -66,6 +66,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
   const [, setStatus] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceDialogueActive, setVoiceDialogueActive] = useState(false);
+  const [activeDisplay, setActiveDisplay] = useState<BrainReply["display"] | null>(null);
   const [, setLiveCaption] = useState("");
   const [, setAssistantCaption] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +79,22 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const chunksRef = useRef<Blob[]>([]);
   const finalTranscriptRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const startRecordingRef = useRef<(() => Promise<void>) | null>(null);
+  const handleSendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
+
+  const handleVoiceAudioEnded = useCallback(() => {
+    if (voiceDialogueActive) {
+      window.setTimeout(() => {
+        if (realtimeVoiceRef.current) {
+          // WebRTC socket handles continuous conversation naturally
+        } else {
+          // Fallback push-to-talk mic loop, automatically restart listening
+          void startRecordingRef.current?.();
+        }
+      }, 550);
+    }
+  }, [voiceDialogueActive]);
+
   const mood = useBearStore((store) => store.mood);
   const dispatchMoodEvent = useBearStore((store) => store.dispatchMoodEvent);
   const refreshEnvironmentalMood = useBearStore((store) => store.refreshEnvironmentalMood);
@@ -179,7 +197,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   }, [refreshEnvironmentalMood]);
 
   const playVoiceReply = useCallback(async (text: string) => {
-    if (!settings.voiceEnabled || !settings.apiKey) return;
+    if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl)) return;
 
     try {
       const blob = await speakText(text, settings);
@@ -205,8 +223,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("intro");
     setShowIntro(true);
     if (settings.soundEnabled) playTinySparkle();
-    if (settings.voiceEnabled && settings.apiKey) void playVoiceReply("Hi. I'm Bumi. This is my first day here.");
-  }, [playVoiceReply, settings.apiKey, settings.soundEnabled, settings.voiceEnabled]);
+    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl)) void playVoiceReply("Hi. I'm Bumi. This is my first day here.");
+  }, [playVoiceReply, settings.apiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled]);
 
   const handleIntroComplete = useCallback(() => {
     if (introFinishedRef.current) return;
@@ -221,7 +239,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const handleSendMessage = useCallback(
     async (text: string) => {
-      if (!settings.apiKey) {
+      if (!settings.apiKey && !settings.proxyUrl) {
         setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
         setSpeechText("I need my Grok key before I can think.");
         return;
@@ -236,6 +254,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setStatus(needsSearch ? "Bumi is checking the internet..." : "Bumi is thinking...");
       if (settings.soundEnabled) playThinkingTick();
       dispatchBehavior(needsSearch ? "searchStarted" : "messageStarted");
+      setActiveDisplay(null); // Clear previous TV screen details
 
       try {
         const reply = await sendTextMessage(text, settings, nextHistory, collectPageContext());
@@ -243,15 +262,46 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         if (reply.type === "browser_action" && reply.action && !reply.requiresConfirmation) {
           assistantMessage = await runBrowserAction(reply.action);
         }
+
+        // PRE-FETCH VOICE FOR SEAMLESS SYNC
+        let voiceBlobUrl: string | null = null;
+        if (settings.voiceEnabled) {
+          try {
+            const blob = await speakText(assistantMessage, settings);
+            voiceBlobUrl = URL.createObjectURL(blob);
+          } catch {
+            // silent fallback
+          }
+        }
+
         const assistantTurn: ConversationTurn = { role: "assistant", content: assistantMessage };
         setMessages([...nextHistory, assistantTurn].slice(-8));
         setAssistantCaption(assistantMessage);
+
+        // Launch speech bubble and slide out TV screen synchronously!
         setSpeechText(assistantMessage);
+        if (reply.display) {
+          setActiveDisplay(reply.display);
+        }
+
         setPendingAction(reply.type === "browser_action" && reply.action && reply.requiresConfirmation ? reply.action : null);
         setStatus(reply.requiresConfirmation ? "Bumi needs your confirmation." : "");
         dispatchBehavior(needsSearch ? "searchEnded" : "messageEnded");
         if (settings.soundEnabled) playHappyChirp();
-        void playVoiceReply(assistantMessage);
+
+        // PLAY PRE-FETCHED AUDIO AND REGISTER MIC LOOP TRIGGER
+        if (voiceBlobUrl) {
+          audioRef.current?.pause();
+          audioRef.current = new Audio(voiceBlobUrl);
+          audioRef.current.addEventListener("ended", () => {
+            URL.revokeObjectURL(voiceBlobUrl!);
+            handleVoiceAudioEnded();
+          }, { once: true });
+          await audioRef.current.play();
+        } else {
+          // If no audio, trigger ended loop directly after a brief timeout
+          window.setTimeout(handleVoiceAudioEnded, 2000);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Bumi had trouble reaching Grok.";
         setStatus(message);
@@ -259,10 +309,11 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setBearState("curious");
       }
     },
-    [dispatchBehavior, messages, playVoiceReply, settings],
+    [dispatchBehavior, messages, settings, handleVoiceAudioEnded],
   );
 
   const stopRecording = useCallback(() => {
+    setVoiceDialogueActive(false);
     if (realtimeVoiceRef.current) {
       realtimeVoiceRef.current.stop(true);
       realtimeVoiceRef.current.close();
@@ -280,10 +331,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const startLegacyRecording = useCallback(async () => {
     if (isRecording) return;
-    if (!settings.apiKey) {
+    if (!settings.apiKey && !settings.proxyUrl) {
       setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
       return;
     }
+
+    setVoiceDialogueActive(true);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -335,7 +388,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         if (caption) {
           setStatus("Bumi heard you.");
           setLiveCaption(caption);
-          void handleSendMessage(caption);
+          void handleSendMessageRef.current?.(caption);
           return;
         }
 
@@ -344,7 +397,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           .then((text) => {
             setStatus(text ? "Bumi heard you." : "Bumi did not catch that.");
             setLiveCaption(text);
-            if (text) void handleSendMessage(text);
+            if (text) void handleSendMessageRef.current?.(text);
           })
           .catch((error) => {
             setStatus(error instanceof Error ? error.message : "Bumi could not transcribe that.");
@@ -362,15 +415,16 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setStatus("Microphone permission is needed for push-to-talk.");
       setSpeechText("I need mic permission to hear you.");
     }
-  }, [dispatchBehavior, handleSendMessage, isRecording, settings]);
+  }, [dispatchBehavior, isRecording, settings]);
 
   const startRecording = useCallback(async () => {
     if (isRecording) return;
-    if (!settings.apiKey) {
+    if (!settings.apiKey && !settings.proxyUrl) {
       setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
       return;
     }
 
+    setVoiceDialogueActive(true);
     setPanelOpen(true);
     setLiveCaption("");
     setAssistantCaption("");
@@ -438,6 +492,11 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     }
   }, [onRequestHide, pendingAction, settings.soundEnabled]);
 
+  useEffect(() => {
+    startRecordingRef.current = startRecording;
+    handleSendMessageRef.current = handleSendMessage;
+  }, [startRecording, handleSendMessage]);
+
   return (
     <AnimatePresence>
       {enabled && bearState !== "hidden" && (
@@ -451,6 +510,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             settings={settings}
             mood={mood}
             panelOpen={panelOpen}
+            display={activeDisplay}
+            onCloseDisplay={() => setActiveDisplay(null)}
             onSpawnComplete={handleSpawnComplete}
             onIntroComplete={handleIntroComplete}
             onLoopComplete={handleLoopComplete}
