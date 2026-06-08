@@ -25,7 +25,7 @@ export class RealtimeVoiceSession {
   private playTime = 0;
   private activeSources = new Set<AudioBufferSourceNode>();
   private heardUserTranscript = false;
-  private responseRequested = false;
+  private responseActive = false;
   private readonly pageContext: string;
 
   constructor(
@@ -66,8 +66,17 @@ export class RealtimeVoiceSession {
   }
 
   private async startMic() {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    this.audioContext = new AudioContext({
+      sampleRate: SAMPLE_RATE,
+      latencyHint: "interactive",
+    });
     if (this.audioContext.state === "suspended") await this.audioContext.resume();
     this.source = this.audioContext.createMediaStreamSource(this.stream);
     this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
@@ -98,23 +107,24 @@ export class RealtimeVoiceSession {
   }
 
   private openSocket(secret: string) {
-    const url = `wss://api.x.ai/v1/realtime?model=${MODEL}`;
+    const url = `wss://api.x.ai/v1/realtime?model=${MODEL}&smart_turn=0.5&smart_turn_timeout=1500`;
     this.ws = new WebSocket(url, [`xai-client-secret.${secret}`]);
 
     this.ws.onopen = () => {
       this.connected = true;
-      this.callbacks.onStatus("Bumi is listening live...");
+      const name = this.settings.companionName || "Bumi";
+      this.callbacks.onStatus(`${name} is listening live...`);
       this.ws?.send(
         JSON.stringify({
           type: "session.update",
           session: {
             voice: this.settings.voiceId,
-            instructions: `You are Bumi, a tiny living bear companion sharing the user's screen. Speak like a warm friend on a phone call: natural, emotionally present, and never robotic. Use short human phrases, tiny pauses, and warm acknowledgements like "mm", "okay", or "I see" when they fit. Keep most replies under two short sentences unless the user asks for more. If the user interrupts you, stop and listen. Use the current browser/page context when the user asks what is on screen or around the browser.\n\nCurrent browser context:\n${this.pageContext.slice(0, 12000)}`,
+            instructions: `You are ${name}, a tiny living bear companion sharing the user's screen. ${this.settings.memory ? `Persistent memory of the user: ${this.settings.memory}. ` : ""}Speak like a warm friend on a phone call: natural, emotionally present, and never robotic. Use short human phrases, tiny pauses, and warm acknowledgements like "mm", "okay", or "I see" when they fit. Keep most replies under two short sentences unless the user asks for more. If the user interrupts you, stop and listen. Use the current browser/page context when the user asks what is on screen or around the browser.\n\nCurrent browser context:\n${this.pageContext.slice(0, 12000)}`,
             turn_detection: {
               type: "server_vad",
-              threshold: 0.68,
-              silence_duration_ms: 520,
-              prefix_padding_ms: 333,
+              threshold: 0.5,
+              silence_duration_ms: 450,
+              prefix_padding_ms: 300,
             },
             audio: {
               input: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
@@ -147,6 +157,11 @@ export class RealtimeVoiceSession {
   private handleEvent(event: Record<string, unknown>) {
     const type = String(event.type ?? "");
 
+    if (type === "response.created") {
+      this.responseActive = true;
+      return;
+    }
+
     if (type === "response.output_audio.delta" && typeof event.delta === "string") {
       this.playPcmDelta(event.delta);
       return;
@@ -157,11 +172,11 @@ export class RealtimeVoiceSession {
       this.assistantText = "";
       this.callbacks.onStatus("Bumi is listening...");
       try {
-        if (this.responseRequested) this.ws?.send(JSON.stringify({ type: "response.cancel" }));
+        if (this.responseActive) this.ws?.send(JSON.stringify({ type: "response.cancel" }));
       } catch {
         // Some realtime-compatible providers may ignore cancellation.
       }
-      this.responseRequested = false;
+      this.responseActive = false;
       return;
     }
 
@@ -186,7 +201,7 @@ export class RealtimeVoiceSession {
     if (type === "response.done") {
       this.callbacks.onAssistantDone(this.assistantText.trim());
       this.assistantText = "";
-      this.responseRequested = false;
+      this.responseActive = false;
       this.heardUserTranscript = false;
       this.callbacks.onStatus("");
       return;
@@ -194,13 +209,14 @@ export class RealtimeVoiceSession {
 
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
       this.callbacks.onStatus("Bumi is answering...");
-      this.requestResponse();
+      // Let the server VAD automatically trigger response creation.
+      return;
     }
   }
 
   private requestResponse() {
-    if (this.responseRequested || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.responseRequested = true;
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.responseActive = true;
     this.ws.send(JSON.stringify({ type: "response.create" }));
   }
 

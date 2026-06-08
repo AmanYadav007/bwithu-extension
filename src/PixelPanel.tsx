@@ -57,7 +57,7 @@ export default function PixelPanel({
       className="bwithu-panel"
     >
       <div className="bwithu-panel__bar">
-        <span>{isRecording ? "Bumi is listening" : "Bumi"}</span>
+        <span>{isRecording ? `${settings.companionName || "Bumi"} is listening` : (settings.companionName || "Bumi")}</span>
         <div>
           <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="Bumi settings">
             key
@@ -75,7 +75,7 @@ export default function PixelPanel({
             {liveCaption || lastMessage(messages, "user") || "Say something..."}
           </p>
           <p className="bwithu-chat-bubble bwithu-chat-bubble--bear">
-            <span>Bumi</span>
+            <span>{settings.companionName || "Bumi"}</span>
             {assistantCaption || lastMessage(messages, "assistant") || "I'm here."}
           </p>
         </div>
@@ -83,7 +83,7 @@ export default function PixelPanel({
           <div className="bwithu-chat-history">
             {messages.slice(-2).map((message, index) => (
             <p key={`${message.role}-${index}`} className={`bwithu-chat-log__${message.role}`}>
-              <span>{message.role === "user" ? "You" : "Bumi"}:</span> {message.content}
+              <span>{message.role === "user" ? "You" : (settings.companionName || "Bumi")}:</span> {message.content}
             </p>
             ))}
           </div>
@@ -92,7 +92,7 @@ export default function PixelPanel({
 
       {pendingAction && (
         <section className="bwithu-confirm">
-          <p>Bumi wants to: {describeAction(pendingAction)}</p>
+          <p>{settings.companionName || "Bumi"} wants to: {describeAction(pendingAction, settings.companionName || "Bumi")}</p>
           <div>
             <button type="button" onClick={onConfirmAction}>
               Do it
@@ -116,14 +116,23 @@ export default function PixelPanel({
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Talk to Bumi..."
-          aria-label="Message Bumi"
+          placeholder={`Talk to ${settings.companionName || "Bumi"}...`}
+          aria-label={`Message ${settings.companionName || "Bumi"}`}
         />
         <button type="submit">Send</button>
       </form>
 
       {settingsOpen && (
         <section className="bwithu-settings">
+          <label>
+            Name
+            <input
+              value={settings.companionName || ""}
+              onChange={(event) => onSettingsChange({ ...settings, companionName: event.target.value })}
+              placeholder="Bumi"
+              type="text"
+            />
+          </label>
           <label>
             Grok key
             <input
@@ -223,7 +232,7 @@ function lastMessage(messages: ConversationTurn[], role: ConversationTurn["role"
   return [...messages].reverse().find((message) => message.role === role)?.content;
 }
 
-function describeAction(action: BrowserAction) {
+function describeAction(action: BrowserAction, companionName: string) {
   switch (action.kind) {
     case "open_url":
       return `open ${action.payload.url}`;
@@ -238,7 +247,7 @@ function describeAction(action: BrowserAction) {
     case "create_calendar_event":
       return `schedule ${action.payload.title || "a call"}`;
     case "hide_bear":
-      return "hide Bumi";
+      return `hide ${companionName}`;
     default:
       return "take an action";
   }

@@ -11,7 +11,7 @@ import { useBearStore } from "./bearStore";
 import { collectPageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
 import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
-import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "./storage";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessages } from "./storage";
 import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
@@ -101,13 +101,20 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    loadSettings().then((next) => {
-      if (!cancelled) setSettings(next);
+    Promise.all([loadSettings(), loadMessages()]).then(([nextSettings, nextMessages]) => {
+      if (!cancelled) {
+        setSettings(nextSettings);
+        setMessages(nextMessages);
+      }
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    void saveMessages(messages);
+  }, [messages]);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
@@ -223,8 +230,16 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("intro");
     setShowIntro(true);
     if (settings.soundEnabled) playTinySparkle();
-    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl)) void playVoiceReply("Hi. I'm Bumi. This is my first day here.");
-  }, [playVoiceReply, settings.apiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled]);
+    
+    const introText = settings.companionName
+      ? `Hi. I'm ${settings.companionName}. This is my first day here.`
+      : "Hi... I'm a little bear, but I don't have a name yet. What would you like to call me?";
+    setSpeechText(introText);
+    
+    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl)) {
+      void playVoiceReply(introText);
+    }
+  }, [playVoiceReply, settings.apiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled, settings.companionName]);
 
   const handleIntroComplete = useCallback(() => {
     if (introFinishedRef.current) return;
@@ -239,6 +254,34 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const handleSendMessage = useCallback(
     async (text: string) => {
+      const companionName = settings.companionName || "";
+
+      // INTERCEPT USER INPUT TO SET COMPANION NAME ON FIRST RUN
+      if (!companionName) {
+        const chosenName = text.trim();
+        if (chosenName.length > 0) {
+          const updatedSettings = { ...settings, companionName: chosenName };
+          setSettings(updatedSettings);
+          void saveSettings(updatedSettings);
+
+          const userTurn: ConversationTurn = { role: "user" as const, content: `I'd like to call you ${chosenName}.` };
+          const assistantReply = `Okay, from now on you can call me ${chosenName}! How can I help you today?`;
+          const assistantTurn: ConversationTurn = { role: "assistant" as const, content: assistantReply };
+          
+          setMessages([userTurn, assistantTurn]);
+          setSpeechText(assistantReply);
+          setAssistantCaption(assistantReply);
+          setStatus("");
+          dispatchBehavior("messageEnded");
+          
+          if (settings.soundEnabled) playHappyChirp();
+          if (settings.voiceEnabled) {
+            void playVoiceReply(assistantReply);
+          }
+          return;
+        }
+      }
+
       if (!settings.apiKey && !settings.proxyUrl) {
         setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
         setSpeechText("I need my Grok key before I can think.");
@@ -251,7 +294,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setMessages(nextHistory);
       setAssistantCaption("");
       setSpeechText(needsSearch ? "Let me look that up..." : "Thinking...");
-      setStatus(needsSearch ? "Bumi is checking the internet..." : "Bumi is thinking...");
+      setStatus(needsSearch ? `${companionName || "Bumi"} is checking the internet...` : `${companionName || "Bumi"} is thinking...`);
       if (settings.soundEnabled) playThinkingTick();
       dispatchBehavior(needsSearch ? "searchStarted" : "messageStarted");
       setActiveDisplay(null); // Clear previous TV screen details
@@ -259,6 +302,15 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       try {
         const reply = await sendTextMessage(text, settings, nextHistory, collectPageContext());
         let assistantMessage = reply.message;
+
+        // Persist learned user facts to settings memory
+        if (reply.memoryUpdate) {
+          const oldMemory = settings.memory || "";
+          const newMemory = (oldMemory + " " + reply.memoryUpdate).trim();
+          const updatedSettings = { ...settings, memory: newMemory };
+          setSettings(updatedSettings);
+          void saveSettings(updatedSettings);
+        }
         if (reply.type === "browser_action" && reply.action && !reply.requiresConfirmation) {
           assistantMessage = await runBrowserAction(reply.action);
         }
@@ -339,7 +391,13 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setVoiceDialogueActive(true);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       chunksRef.current = [];
       finalTranscriptRef.current = "";
       setLiveCaption("");

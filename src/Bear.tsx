@@ -12,7 +12,7 @@ import { playClickPop } from "./sounds";
 import type { BearPosition, BwithuSettings } from "./storage";
 import { loadBearPosition, saveBearPosition } from "./storage";
 
-const SIZE = 230;
+const SIZE = 280;
 const DEFAULT_MARGIN = 40;
 
 interface ChromeLike {
@@ -124,6 +124,7 @@ export default function Bear({
   const [positionReady, setPositionReady] = useState(false);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [glbUnavailable, setGlbUnavailable] = useState(false);
+  const [isWandering, setIsWandering] = useState(false);
   const hasDraggedRef = useRef(false);
   const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const useGlbRenderer = settings.characterRenderer === "glb" && !glbUnavailable;
@@ -171,8 +172,15 @@ export default function Bear({
       const current = { x: x.get(), y: y.get() };
       const next = nextWanderPosition(current, settings.wanderIntensity);
       setFacing(next.x >= current.x ? 1 : -1);
-      animate(x, next.x, { type: "spring", stiffness: 70, damping: 18, mass: 0.9 });
-      animate(y, next.y, { type: "spring", stiffness: 90, damping: 20, mass: 1 });
+      
+      setIsWandering(true);
+      const animationX = animate(x, next.x, { type: "spring", stiffness: 70, damping: 18, mass: 0.9 });
+      const animationY = animate(y, next.y, { type: "spring", stiffness: 90, damping: 20, mass: 1 });
+      
+      Promise.all([animationX, animationY]).then(() => {
+        setIsWandering(false);
+      });
+
       void saveBearPosition(next);
     }, wanderDelay(settings.wanderIntensity));
 
@@ -181,7 +189,7 @@ export default function Bear({
     };
   }, [panelOpen, positionReady, settings.wanderIntensity, state, x, y]);
 
-  const animationState = state === "hidden" ? "idle" : state;
+  const animationState = state === "hidden" ? "idle" : (isWandering && state === "idle" ? "walk" : state);
   const config = animationConfigs[animationState] ?? animationConfigs.idle;
 
   const handleAnimationComplete = useMemo(() => {
@@ -284,7 +292,7 @@ export default function Bear({
         {useGlbRenderer ? (
           <GLBCharacter
             modelSrc={resolveAsset("result.glb")}
-            state={state}
+            state={animationState}
             mood={mood}
             facing={facing}
             size={SIZE}
@@ -292,7 +300,7 @@ export default function Bear({
           />
         ) : (
           <SpritePlayer
-            key={state}
+            key={animationState}
             imageSrc={resolveAsset(config.imageSrc)}
             frameWidth={SIZE}
             frameHeight={SIZE}

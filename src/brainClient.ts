@@ -22,6 +22,7 @@ export interface BrainReply {
     title: string;
     content: string;
   };
+  memoryUpdate?: string;
 }
 
 export interface ConversationTurn {

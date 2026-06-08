@@ -132,16 +132,17 @@ async function sendBrainMessage(
     messages: [
       {
         role: "system",
-        content: `You are Bumi, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
+        content: `You are ${storedSettings.companionName || "Bumi"}, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
 
-Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}},"display":{"kind":"weather"|"search"|"info","title":"Display Title","content":"structured text details"}}.
+Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}},"display":{"kind":"weather"|"search"|"info","title":"Display Title","content":"structured text details"},"memoryUpdate":"optional text summarizing facts learned about the user in this turn (e.g. name, preferences)"}.
 
 Rules:
-- If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list) to be shown on Bumi's sliding TV screen.
+- If the user shares facts about themselves (like their name, preferences, or hobbies), summarize them in a single concise line in the "memoryUpdate" JSON property. E.g., "User's name is Aman. They live in SF." Otherwise, leave "memoryUpdate" empty or omit it.
+- If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list) to be shown on ${storedSettings.companionName || "Bumi"}'s sliding TV screen.
 - Only return a "search" action (Google search tab) if the user explicitly commands you to search the web in a new tab (e.g. "open a google search for X").
 - For questions about page/tab content, answer directly from Browser context as type "reply" when possible.
 - Use "read_current_page" or "read_tab_context" only when a fresh read is needed; these do not require confirmation.
-- Always set requiresConfirmation true for switching tabs, opening URLs/searches, hiding Bumi, or creating calendar events.
+- Always set requiresConfirmation true for switching tabs, opening URLs/searches, hiding ${storedSettings.companionName || "Bumi"}, or creating calendar events.
 - To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}.
 - To create a calendar call, collect missing details first. Only call create_calendar_event when title, date/time, and duration or end time are clear. Payload keys: title, start, end, attendees, description, conference, timeZone.
 - Do not claim you can access Gmail, native apps, or email yet.
@@ -149,7 +150,7 @@ Rules:
 Browser context:
 ${browserContext.slice(0, 17000)}
 
-${webContext}`,
+${storedSettings.memory ? `Persistent memory of the user:\n${storedSettings.memory}\n\n` : ""}${webContext}`,
       },
       ...history.map((turn) => ({ role: turn.role, content: turn.content })),
       { role: "user", content: text },
@@ -394,18 +395,35 @@ async function createRealtimeSecret(settings: BwithuSettings) {
   const storedSettings = await loadStoredSettings(settings);
   assertApiKey(storedSettings);
 
-  const response = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${storedSettings.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      expires_after: { seconds: 300 },
-    }),
-  });
+  let response: Response;
+  if (storedSettings.apiKey) {
+    response = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${storedSettings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        expires_after: { seconds: 300 },
+      }),
+    });
+  } else {
+    const proxyUrl = getApiEndpoint("realtime-secret", storedSettings);
+    response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        expires_after: { seconds: 300 },
+      }),
+    });
+  }
 
-  if (!response.ok) throw new Error(`Bumi could not start realtime voice (${response.status}).`);
+  if (!response.ok) {
+    const name = storedSettings.companionName || "Bumi";
+    throw new Error(`${name} could not start realtime voice (${response.status}).`);
+  }
   return response.json();
 }
 
@@ -588,6 +606,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
         action: parsed.action,
         requiresConfirmation: parsed.requiresConfirmation ?? actionRequiresConfirmation(parsed.action),
         display: parsed.display,
+        memoryUpdate: parsed.memoryUpdate,
       };
     }
 
@@ -596,6 +615,7 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
       message: parsed.message || content || "I'm here.",
       requiresConfirmation: false,
       display: parsed.display,
+      memoryUpdate: parsed.memoryUpdate,
     };
   } catch {
     const localAction = parseLocalCommand(originalText);

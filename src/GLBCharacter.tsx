@@ -170,8 +170,10 @@ function animateModel(
   const breathSpeed = mood === "sleepy" ? 1.2 : mood === "excited" ? 2.25 : 1.65;
   const breath = Math.sin(elapsed * breathSpeed) * 0.018;
   const tinyPulse = Math.sin(elapsed * 3.4) * 0.006;
-  const attentionYaw = THREE.MathUtils.clamp(pointer.x * 0.28, -0.28, 0.28);
-  const attentionPitch = THREE.MathUtils.clamp(pointer.y * -0.12, -0.14, 0.14);
+  const gazeNoiseX = Math.sin(elapsed * 0.5) * Math.cos(elapsed * 0.35) * 0.06;
+  const gazeNoiseY = Math.cos(elapsed * 0.45) * Math.sin(elapsed * 0.2) * 0.03;
+  const attentionYaw = THREE.MathUtils.clamp(pointer.x * 0.28 + gazeNoiseX, -0.28, 0.28);
+  const attentionPitch = THREE.MathUtils.clamp(pointer.y * -0.12 + gazeNoiseY, -0.14, 0.14);
 
   let squash = 0;
   let bounce = 0;
@@ -179,14 +181,21 @@ function animateModel(
   let nod = 0;
 
   if (state === "listen") nod = Math.sin(elapsed * 3.2) * 0.06;
+  if (state === "walk") {
+    bounce = Math.abs(Math.sin(elapsed * 9)) * 0.08;
+    spin = Math.sin(elapsed * 9) * 0.07;
+    nod = Math.sin(elapsed * 18) * 0.04;
+    squash = Math.sin(elapsed * 9) * 0.035;
+  }
   if (state === "think" || state === "searching") {
     spin = Math.sin(elapsed * 3.8) * 0.16;
     bounce = Math.max(0, Math.sin(elapsed * 4.8)) * 0.035;
   }
   if (state === "talk") {
-    squash = Math.sin(elapsed * 11.5) * 0.055;
-    bounce = Math.max(0, Math.sin(elapsed * 9)) * 0.09;
-    spin = Math.sin(elapsed * 5.5) * 0.08;
+    squash = Math.sin(elapsed * 10) * 0.04 + Math.sin(elapsed * 23) * 0.015;
+    bounce = Math.max(0, Math.sin(elapsed * 8.5)) * 0.08 + Math.max(0, Math.sin(elapsed * 17)) * 0.02;
+    spin = Math.sin(elapsed * 4.5) * 0.06 + Math.sin(elapsed * 11) * 0.02;
+    nod = Math.sin(elapsed * 13) * 0.04;
   }
   if (state === "happy" || state === "wave") {
     bounce = Math.abs(Math.sin(elapsed * 6.4)) * 0.18;
