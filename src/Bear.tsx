@@ -1,4 +1,4 @@
-import { animate, motion, useMotionValue } from "framer-motion";
+import { animate, motion, useMotionValue, AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import GLBCharacter from "./GLBCharacter";
@@ -125,9 +125,28 @@ export default function Bear({
   const [facing, setFacing] = useState<1 | -1>(1);
   const [glbUnavailable, setGlbUnavailable] = useState(false);
   const [isWandering, setIsWandering] = useState(false);
+  const [reactions, setReactions] = useState<{ id: number; char: string; x: number }[]>([]);
   const hasDraggedRef = useRef(false);
   const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const useGlbRenderer = settings.characterRenderer === "glb" && !glbUnavailable;
+
+  const triggerReaction = useCallback((char: string) => {
+    const id = Date.now() + Math.random();
+    const randomOffset = -40 + Math.random() * 80;
+    setReactions((current) => [...current, { id, char, x: randomOffset }].slice(-5));
+  }, []);
+
+  useEffect(() => {
+    if (state === "searching" || state === "think") {
+      triggerReaction("🤔");
+    } else if (state === "happy" || state === "wave") {
+      triggerReaction(Math.random() > 0.5 ? "✨" : "❤️");
+    } else if (state === "listen") {
+      triggerReaction("👀");
+    } else if (state === "sleepy" || state === "sleep") {
+      triggerReaction("😴");
+    }
+  }, [state, triggerReaction]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,6 +296,32 @@ export default function Bear({
         }}
       >
         <div className="bwithu-bear-shadow" aria-hidden="true" />
+        <AnimatePresence>
+          {reactions.map((r) => (
+            <motion.span
+              key={r.id}
+              initial={{ opacity: 0, y: -20, scale: 0.8, x: r.x }}
+              animate={{ opacity: 1, y: -90, scale: 1.25 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.9, ease: "easeOut" }}
+              onAnimationComplete={() => {
+                setReactions((current) => current.filter((item) => item.id !== r.id));
+              }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: "50%",
+                transform: "translateX(-50%)",
+                fontSize: "28px",
+                pointerEvents: "none",
+                zIndex: 100,
+                filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.15))",
+              }}
+            >
+              {r.char}
+            </motion.span>
+          ))}
+        </AnimatePresence>
         {(showIntro || speechText) && (
           <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} />
         )}

@@ -18,6 +18,7 @@ export interface BwithuSettings {
   proxyUrl?: string;
   companionName?: string;
   memory?: string;
+  onboardingCompleted: boolean;
 }
 
 export const DEFAULT_SETTINGS: BwithuSettings = {
@@ -32,6 +33,7 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   proxyUrl: "",
   companionName: "",
   memory: "",
+  onboardingCompleted: false,
 };
 
 interface ChromeLike {

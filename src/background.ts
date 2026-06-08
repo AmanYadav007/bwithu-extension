@@ -148,7 +148,7 @@ Rules:
 - Do not claim you can access Gmail, native apps, or email yet.
 
 Browser context:
-${browserContext.slice(0, 17000)}
+${browserContext.slice(0, 8000)}
 
 ${storedSettings.memory ? `Persistent memory of the user:\n${storedSettings.memory}\n\n` : ""}${webContext}`,
       },

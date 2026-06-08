@@ -2,6 +2,7 @@ import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Bear from "./Bear";
 import QuickControls from "./QuickControls";
+import PixelPanel from "./PixelPanel";
 import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
 import type { BehaviorEvent } from "./behaviorController";
@@ -11,7 +12,7 @@ import { useBearStore } from "./bearStore";
 import { collectPageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
 import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessages } from "./storage";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessages, resetBearPosition } from "./storage";
 import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
@@ -62,14 +63,15 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [speechText, setSpeechText] = useState("");
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [showChatPanel, setShowChatPanel] = useState(false);
   const [messages, setMessages] = useState<ConversationTurn[]>([]);
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
   const [, setStatus] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [voiceDialogueActive, setVoiceDialogueActive] = useState(false);
   const [activeDisplay, setActiveDisplay] = useState<BrainReply["display"] | null>(null);
-  const [, setLiveCaption] = useState("");
-  const [, setAssistantCaption] = useState("");
+  const [liveCaption, setLiveCaption] = useState("");
+  const [assistantCaption, setAssistantCaption] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const introFinishedRef = useRef(false);
@@ -105,6 +107,9 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       if (!cancelled) {
         setSettings(nextSettings);
         setMessages(nextMessages);
+        if (nextSettings.onboardingCompleted === false) {
+          setShowChatPanel(true);
+        }
       }
     });
     return () => {
@@ -189,9 +194,16 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     return clearIdleTimer;
   }, [bearState, clearIdleTimer, scheduleIdleEvent]);
 
+  const bearStateRef = useRef<BearState>(bearState);
+  useEffect(() => {
+    bearStateRef.current = bearState;
+  }, [bearState]);
+
   useEffect(() => {
     function reactToScroll() {
-      dispatchBehavior("scroll");
+      if (bearStateRef.current !== "hidden") {
+        dispatchBehavior("scroll");
+      }
     }
 
     window.addEventListener("scroll", reactToScroll, { passive: true });
@@ -199,9 +211,10 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   }, [dispatchBehavior]);
 
   useEffect(() => {
+    if (!enabled) return;
     const timer = setInterval(refreshEnvironmentalMood, 60_000);
     return () => clearInterval(timer);
-  }, [refreshEnvironmentalMood]);
+  }, [refreshEnvironmentalMood, enabled]);
 
   const playVoiceReply = useCallback(async (text: string) => {
     if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl)) return;
@@ -248,6 +261,44 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("wave");
   }, []);
 
+  const runCommandDiagnostics = useCallback(async () => {
+    const name = settings.companionName || "Bumi";
+    console.log(`🛠️ Starting ${name} Command Diagnostics Test Suite...`);
+    const tests = [
+      { cmd: "What is this page about?", desc: "Test page context extraction" },
+      { cmd: "Summarize this page", desc: "Test summarization tool" },
+      { cmd: "Search latest AI news", desc: "Test Brave web search" },
+      { cmd: "What's the weather in Mumbai?", desc: "Test weather search & TV display" },
+      { cmd: "Open YouTube", desc: "Test URL opening" },
+      { cmd: "Switch to tab 2", desc: "Test tab switching" },
+      { cmd: "Hide yourself", desc: "Test hiding action" },
+      { cmd: "What tabs are open?", desc: "Test tab list context" },
+      { cmd: "Remember my name is Aman", desc: "Test long-term memory update" },
+      { cmd: "What do you remember about me?", desc: "Test memory retrieval" }
+    ];
+
+    for (const [idx, t] of tests.entries()) {
+      try {
+        console.log(`[${idx + 1}/10] Testing: "${t.cmd}" (${t.desc})`);
+        
+        // Simulating the flow
+        const reply = await sendTextMessage(t.cmd, settings, [], collectPageContext());
+        
+        if (reply && (reply.message || reply.action || reply.display)) {
+          console.log(`✅ Passed: "${t.cmd}" -> Received message length: ${reply.message?.length || 0}`);
+          if (reply.action) console.log(`   Action parsed:`, reply.action);
+          if (reply.display) console.log(`   Display info:`, reply.display);
+          if (reply.memoryUpdate) console.log(`   Memory updated: "${reply.memoryUpdate}"`);
+        } else {
+          throw new Error("Empty reply received from model");
+        }
+      } catch (err) {
+        console.error(`❌ Failed: "${t.cmd}" -> Error:`, err);
+      }
+    }
+    console.log("🛠️ BWithU Diagnostics Completed!");
+  }, [settings]);
+
   const handleLoopComplete = useCallback(() => {
     setBearState("idle");
   }, []);
@@ -265,7 +316,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           void saveSettings(updatedSettings);
 
           const userTurn: ConversationTurn = { role: "user" as const, content: `I'd like to call you ${chosenName}.` };
-          const assistantReply = `Okay, from now on you can call me ${chosenName}! How can I help you today?`;
+          const assistantReply = `Okay, from now on you can call me ${chosenName}! I can talk with you (🎙️), read this page (📄), and search the web (🔍)!`;
           const assistantTurn: ConversationTurn = { role: "assistant" as const, content: assistantReply };
           
           setMessages([userTurn, assistantTurn]);
@@ -282,9 +333,19 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         }
       }
 
+      if (text.trim().toLowerCase() === "/test") {
+        setSpeechText("Running command diagnostics in developer console...");
+        setStatus("Running tests...");
+        void runCommandDiagnostics().then(() => {
+          setSpeechText("Command diagnostics complete! Check console.");
+          setStatus("");
+        });
+        return;
+      }
+
       if (!settings.apiKey && !settings.proxyUrl) {
-        setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
-        setSpeechText("I need my Grok key before I can think.");
+        setStatus("Add your Grok key or check connection settings.");
+        setSpeechText("I need my Grok key setup before I can think.");
         return;
       }
 
@@ -355,9 +416,19 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           window.setTimeout(handleVoiceAudioEnded, 2000);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Bumi had trouble reaching Grok.";
-        setStatus(message);
-        setSpeechText(message);
+        const errMessage = error instanceof Error ? error.message : "";
+        let friendlyMessage = "I had trouble with that. Let's try again in a bit!";
+        
+        if (errMessage.includes("API key")) {
+          friendlyMessage = `I need my API key setup to think. Could you check my settings?`;
+        } else if (errMessage.includes("restricted") || errMessage.includes("permission")) {
+          friendlyMessage = "I need permission for that, or this page might be restricted.";
+        } else if (errMessage.includes("Brave") || errMessage.includes("search")) {
+          friendlyMessage = "I had trouble searching the web. Let me try another way.";
+        }
+        
+        setStatus(friendlyMessage);
+        setSpeechText(friendlyMessage);
         setBearState("curious");
       }
     },
@@ -567,7 +638,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             speechText={speechText}
             settings={settings}
             mood={mood}
-            panelOpen={panelOpen}
+            panelOpen={panelOpen || showChatPanel}
             display={activeDisplay}
             onCloseDisplay={() => setActiveDisplay(null)}
             onSpawnComplete={handleSpawnComplete}
@@ -578,7 +649,41 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             onDragReaction={() => dispatchBehavior("dragged")}
             onHoverReaction={() => dispatchBehavior("hovered")}
             controls={
-              panelOpen ? (
+              showChatPanel ? (
+                <PixelPanel
+                  settings={settings}
+                  messages={messages}
+                  pendingAction={pendingAction}
+                  status={status}
+                  isRecording={isRecording}
+                  liveCaption={liveCaption}
+                  assistantCaption={assistantCaption}
+                  onSettingsChange={(nextSettings) => {
+                    setSettings((current) => {
+                      if (!current.onboardingCompleted && nextSettings.onboardingCompleted) {
+                        setSpeechText("");
+                        setBearState("wave");
+                        if (nextSettings.soundEnabled) playHappyChirp();
+                        setShowChatPanel(false);
+                      }
+                      void saveSettings(nextSettings);
+                      return nextSettings;
+                    });
+                  }}
+                  onSendMessage={handleSendMessage}
+                  onToggleRecording={() => {
+                    if (isRecording) stopRecording();
+                    else void startRecording();
+                  }}
+                  onConfirmAction={handleConfirmAction}
+                  onCancelAction={() => setPendingAction(null)}
+                  onResetPosition={async () => {
+                    await resetBearPosition();
+                    setStatus("Position reset!");
+                  }}
+                  onClose={() => setShowChatPanel(false)}
+                />
+              ) : panelOpen ? (
                 <QuickControls
                   isRecording={isRecording}
                   pendingAction={pendingAction}
@@ -592,6 +697,10 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
                   onConfirmAction={handleConfirmAction}
                   onCancelAction={() => setPendingAction(null)}
                   onClose={() => setPanelOpen(false)}
+                  onOpenSettings={() => {
+                    setPanelOpen(false);
+                    setShowChatPanel(true);
+                  }}
                 />
               ) : null
             }

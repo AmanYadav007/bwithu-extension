@@ -721,3 +721,61 @@
     box-shadow: 0 0 9px #10b981;
   }
 }
+
+/* --- Onboarding View Styles --- */
+.bwithu-onboarding-view {
+  padding: 14px 16px;
+  color: #2b1b12;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.bwithu-onboarding-step h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #3b2416;
+  border-bottom: 2px solid #5f371f;
+  padding-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bwithu-onboarding-step p {
+  margin: 0 0 12px;
+  font-size: 11px;
+  color: #5a4030;
+  line-height: 1.4;
+}
+
+.bwithu-onboarding-step input {
+  margin-bottom: 10px;
+}
+
+.bwithu-onboarding-step button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.bwithu-onboarding-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.bwithu-onboarding-list li {
+  line-height: 1.45;
+  border-left: 2px solid #9a5b24;
+  padding-left: 6px;
+}
+
+.bwithu-onboarding-start-btn {
+  background: #2f9b68 !important;
+  border-color: #1b5e3e !important;
+  box-shadow: 0 3px 0 #1b5e3e !important;
+  width: 100%;
+}
+

@@ -10,7 +10,7 @@ export function collectPageContext() {
     .join("\n");
   const body = document.body?.innerText?.replace(/\s+\n/g, "\n").replace(/[ \t]+/g, " ").trim() ?? "";
 
-  return [title, url, selectedText, headings ? `Headings:\n${headings}` : "", `Visible page text:\n${body.slice(0, 12000)}`]
+  return [title, url, selectedText, headings ? `Headings:\n${headings}` : "", `Visible page text:\n${body.slice(0, 6000)}`]
     .filter(Boolean)
     .join("\n\n");
 }

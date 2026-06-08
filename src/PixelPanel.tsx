@@ -57,70 +57,118 @@ export default function PixelPanel({
       className="bwithu-panel"
     >
       <div className="bwithu-panel__bar">
-        <span>{isRecording ? `${settings.companionName || "Bumi"} is listening` : (settings.companionName || "Bumi")}</span>
+        <span>{!settings.onboardingCompleted ? "Setup Companion" : (isRecording ? `${settings.companionName || "Bumi"} is listening` : (settings.companionName || "Bumi"))}</span>
         <div>
-          <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="Bumi settings">
-            key
-          </button>
-          <button type="button" onClick={onClose} aria-label="Close Bumi panel">
-            x
+          {settings.onboardingCompleted && (
+            <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="settings">
+              ⚙️
+            </button>
+          )}
+          <button type="button" onClick={onClose} aria-label="Close panel">
+            ×
           </button>
         </div>
       </div>
 
-      <section className="bwithu-chat-log" aria-live="polite">
-        <div className="bwithu-chat-pair">
-          <p className="bwithu-chat-bubble bwithu-chat-bubble--user">
-            <span>You</span>
-            {liveCaption || lastMessage(messages, "user") || "Say something..."}
-          </p>
-          <p className="bwithu-chat-bubble bwithu-chat-bubble--bear">
-            <span>{settings.companionName || "Bumi"}</span>
-            {assistantCaption || lastMessage(messages, "assistant") || "I'm here."}
-          </p>
+      {!settings.onboardingCompleted ? (
+        <div className="bwithu-onboarding-view">
+          {!settings.companionName ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const nameInput = (e.currentTarget.elements.namedItem("nameInput") as HTMLInputElement).value.trim();
+                if (nameInput) onSendMessage(nameInput);
+              }}
+              className="bwithu-onboarding-step"
+            >
+              <h3>Name Your Companion</h3>
+              <p>Give your browser companion a name to get started!</p>
+              <input
+                name="nameInput"
+                placeholder="E.g., Koda, Mochi, Poco..."
+                required
+                autoFocus
+              />
+              <button type="submit">Set Name</button>
+            </form>
+          ) : (
+            <div className="bwithu-onboarding-step">
+              <h3>Meet {settings.companionName}!</h3>
+              <p>Here are 3 things I can do for you:</p>
+              <ul className="bwithu-onboarding-list">
+                <li>🎙️ <strong>Talk with me</strong>: Click the mic below for hands-free continuous chat!</li>
+                <li>📄 <strong>Read page context</strong>: Ask me what's on your active browser tab!</li>
+                <li>🔍 <strong>Search the web</strong>: Ask me for current news, weather, or facts!</li>
+              </ul>
+              <button
+                type="button"
+                className="bwithu-onboarding-start-btn"
+                onClick={() => {
+                  onSettingsChange({ ...settings, onboardingCompleted: true });
+                }}
+              >
+                Got it, let's go!
+              </button>
+            </div>
+          )}
         </div>
-        {messages.length > 0 && (
-          <div className="bwithu-chat-history">
-            {messages.slice(-2).map((message, index) => (
-            <p key={`${message.role}-${index}`} className={`bwithu-chat-log__${message.role}`}>
-              <span>{message.role === "user" ? "You" : (settings.companionName || "Bumi")}:</span> {message.content}
-            </p>
-            ))}
-          </div>
-        )}
-      </section>
+      ) : (
+        <>
+          <section className="bwithu-chat-log" aria-live="polite">
+            <div className="bwithu-chat-pair">
+              <p className="bwithu-chat-bubble bwithu-chat-bubble--user">
+                <span>You</span>
+                {liveCaption || lastMessage(messages, "user") || "Say something..."}
+              </p>
+              <p className="bwithu-chat-bubble bwithu-chat-bubble--bear">
+                <span>{settings.companionName || "Bumi"}</span>
+                {assistantCaption || lastMessage(messages, "assistant") || "I'm here."}
+              </p>
+            </div>
+            {messages.length > 0 && (
+              <div className="bwithu-chat-history">
+                {messages.slice(-2).map((message, index) => (
+                <p key={`${message.role}-${index}`} className={`bwithu-chat-log__${message.role}`}>
+                  <span>{message.role === "user" ? "You" : (settings.companionName || "Bumi")}:</span> {message.content}
+                </p>
+                ))}
+              </div>
+            )}
+          </section>
 
-      {pendingAction && (
-        <section className="bwithu-confirm">
-          <p>{settings.companionName || "Bumi"} wants to: {describeAction(pendingAction, settings.companionName || "Bumi")}</p>
-          <div>
-            <button type="button" onClick={onConfirmAction}>
-              Do it
+          {pendingAction && (
+            <section className="bwithu-confirm">
+              <p>{settings.companionName || "Bumi"} wants to: {describeAction(pendingAction, settings.companionName || "Bumi")}</p>
+              <div>
+                <button type="button" onClick={onConfirmAction}>
+                  Do it
+                </button>
+                <button type="button" onClick={onCancelAction}>
+                  Not now
+                </button>
+              </div>
+            </section>
+          )}
+
+          <form className="bwithu-chat-form" onSubmit={submit}>
+            <button
+              className={isRecording ? "bwithu-mic bwithu-mic--active" : "bwithu-mic"}
+              type="button"
+              onClick={onToggleRecording}
+              aria-label={isRecording ? "Stop listening" : "Start listening"}
+            >
+              {isRecording ? "on" : "mic"}
             </button>
-            <button type="button" onClick={onCancelAction}>
-              Not now
-            </button>
-          </div>
-        </section>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={`Talk to ${settings.companionName || "Bumi"}...`}
+              aria-label={`Message ${settings.companionName || "Bumi"}`}
+            />
+            <button type="submit">Send</button>
+          </form>
+        </>
       )}
-
-      <form className="bwithu-chat-form" onSubmit={submit}>
-        <button
-          className={isRecording ? "bwithu-mic bwithu-mic--active" : "bwithu-mic"}
-          type="button"
-          onClick={onToggleRecording}
-          aria-label={isRecording ? "Stop listening" : "Start listening"}
-        >
-          {isRecording ? "on" : "mic"}
-        </button>
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={`Talk to ${settings.companionName || "Bumi"}...`}
-          aria-label={`Message ${settings.companionName || "Bumi"}`}
-        />
-        <button type="submit">Send</button>
-      </form>
 
       {settingsOpen && (
         <section className="bwithu-settings">

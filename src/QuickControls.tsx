@@ -13,6 +13,7 @@ interface QuickControlsProps {
   onConfirmAction: () => void;
   onCancelAction: () => void;
   onClose: () => void;
+  onOpenSettings: () => void;
 }
 
 export default function QuickControls({
@@ -25,6 +26,7 @@ export default function QuickControls({
   onConfirmAction,
   onCancelAction,
   onClose,
+  onOpenSettings,
 }: QuickControlsProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -41,9 +43,9 @@ export default function QuickControls({
   return (
     <motion.div
       className="bwithu-quick-controls"
-      initial={{ opacity: 0, y: 8, scale: 0.9 }}
+      initial={{ opacity: 0, y: 8, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.9 }}
+      exit={{ opacity: 0, y: 8, scale: 0.96 }}
       transition={{ duration: 0.16 }}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -78,6 +80,9 @@ export default function QuickControls({
             </button>
             <button type="button" className="bwithu-quick-button" onClick={onToggleVoice} aria-label="Toggle Bumi voice">
               {voiceId === "ara" ? "F" : "M"}
+            </button>
+            <button type="button" className="bwithu-quick-button" onClick={onOpenSettings} aria-label="Open settings">
+              ⚙️
             </button>
             <button type="button" className="bwithu-quick-button bwithu-quick-button--ghost" onClick={onClose} aria-label="Close controls">
               ×
