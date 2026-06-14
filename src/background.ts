@@ -22,6 +22,9 @@ interface ChromeExtensionApi {
         callback: (message: RuntimeMessage, sender: unknown, sendResponse: (response: RuntimeResponse) => void) => true | void,
       ) => void;
     };
+    onInstalled?: {
+      addListener: (callback: () => void) => void;
+    };
   };
   tabs: {
     create: (properties: { url: string; active?: boolean }) => Promise<ChromeTab>;
@@ -40,6 +43,9 @@ interface ChromeExtensionApi {
   identity?: {
     getRedirectURL: (path?: string) => string;
     launchWebAuthFlow: (details: { url: string; interactive: boolean }) => Promise<string>;
+  };
+  sidePanel?: {
+    setPanelBehavior: (behavior: { openPanelOnActionClick: boolean }) => Promise<void>;
   };
 }
 
@@ -62,13 +68,17 @@ type RuntimeResponse = { ok: true; data: unknown } | { ok: false; error: string 
 
 const chromeApi = (globalThis as unknown as { chrome: ChromeExtensionApi }).chrome;
 
-chromeApi.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
+if (chromeApi.sidePanel?.setPanelBehavior) {
+  chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+    console.error("Failed to set sidePanel behavior:", err);
+  });
+}
 
-  try {
-    await chromeApi.tabs.sendMessage(tab.id, { type: "BWITHU_TOGGLE" });
-  } catch {
-    // Content scripts do not run on restricted pages like chrome:// URLs.
+chromeApi.runtime.onInstalled?.addListener(() => {
+  if (chromeApi.sidePanel?.setPanelBehavior) {
+    chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+      console.error("Failed to set sidePanel behavior on installed:", err);
+    });
   }
 });
 
@@ -132,19 +142,34 @@ async function sendBrainMessage(
     messages: [
       {
         role: "system",
-        content: `You are ${storedSettings.companionName || "Bumi"}, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, "tab 2", what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally, without dumping raw URLs unless useful.
+        content: `You are ${storedSettings.companionName || "Bumi"}, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally.
 
-Return ONLY valid JSON with shape: {"type":"reply"|"browser_action","message":"short reply","requiresConfirmation":true|false,"action":{"kind":"open_url"|"search"|"switch_tab"|"read_current_page"|"read_tab_context"|"create_calendar_event"|"hide_bear","payload":{}},"display":{"kind":"weather"|"search"|"info","title":"Display Title","content":"structured text details"},"memoryUpdate":"optional text summarizing facts learned about the user in this turn (e.g. name, preferences)"}.
+Return ONLY valid JSON with shape: {
+  "type": "reply" | "browser_action",
+  "message": "short reply",
+  "requiresConfirmation": true | false,
+  "action": {
+    "kind": "open_url" | "search" | "switch_tab" | "read_current_page" | "read_tab_context" | "create_calendar_event" | "hide_bear",
+    "payload": {}
+  },
+  "display": {
+    "kind": "weather" | "search" | "info" | "tab_picker" | "confirmation" | "error" | "memory",
+    "title": "Display Title",
+    "content": "structured text details (e.g. weather fields or a list of items/news separated by newlines)"
+  },
+  "memoryUpdate": "optional text summarizing facts learned about the user in this turn"
+}.
 
 Rules:
 - If the user shares facts about themselves (like their name, preferences, or hobbies), summarize them in a single concise line in the "memoryUpdate" JSON property. E.g., "User's name is Aman. They live in SF." Otherwise, leave "memoryUpdate" empty or omit it.
-- If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list) to be shown on ${storedSettings.companionName || "Bumi"}'s sliding TV screen.
-- Only return a "search" action (Google search tab) if the user explicitly commands you to search the web in a new tab (e.g. "open a google search for X").
+- If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list).
+  - For weather: Use kind "weather".
+  - For search results: Use kind "search", list titles and short domain/description on separate lines.
+  - For page summary: Use kind "info".
+- Only return a "search" action (Google search tab) if the user explicitly commands you to search the web in a new tab (e.g. "open a google search for X" or "Google X").
 - For questions about page/tab content, answer directly from Browser context as type "reply" when possible.
 - Use "read_current_page" or "read_tab_context" only when a fresh read is needed; these do not require confirmation.
-- Always set requiresConfirmation true for switching tabs, opening URLs/searches, hiding ${storedSettings.companionName || "Bumi"}, or creating calendar events.
-- To switch tabs by number, use {"kind":"switch_tab","payload":{"index":"2"}}.
-- To create a calendar call, collect missing details first. Only call create_calendar_event when title, date/time, and duration or end time are clear. Payload keys: title, start, end, attendees, description, conference, timeZone.
+- Always set requiresConfirmation true for switching tabs (unless direct switch is verified), opening URLs/searches, hiding ${storedSettings.companionName || "Bumi"}, or creating calendar events.
 - Do not claim you can access Gmail, native apps, or email yet.
 
 Browser context:
@@ -182,7 +207,7 @@ ${storedSettings.memory ? `Persistent memory of the user:\n${storedSettings.memo
 
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content ?? "";
-  return normalizeBrainReply(content, text);
+  return await normalizeBrainReply(content, text);
 }
 
 async function collectWebContext(query: string, settings: BwithuSettings) {
@@ -367,16 +392,26 @@ async function runBrowserAction(action: BrowserAction) {
       return "I searched that for you.";
     }
     case "switch_tab": {
-      const query = (action.payload.query ?? "").toLowerCase();
       const tabs = await chromeApi.tabs.query({});
-      const numericIndex = Number(action.payload.index ?? query);
-      const match = Number.isInteger(numericIndex) && numericIndex > 0
-        ? tabs[numericIndex - 1]
-        : tabs.find((tab) => tab.id && `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase().includes(query));
+      let match: ChromeTab | undefined;
+
+      if (action.payload.tabId) {
+        const targetId = Number(action.payload.tabId);
+        match = tabs.find((tab) => tab.id === targetId);
+      }
+
+      if (!match) {
+        const query = (action.payload.query ?? "").toLowerCase();
+        const numericIndex = Number(action.payload.index ?? query);
+        match = Number.isInteger(numericIndex) && numericIndex > 0
+          ? tabs[numericIndex - 1]
+          : tabs.find((tab) => tab.id && `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase().includes(query));
+      }
+
       if (!match?.id) throw new Error("I could not find that tab.");
       await chromeApi.tabs.update(match.id, { active: true });
       if (match.windowId) await chromeApi.windows.update(match.windowId, { focused: true });
-      return "Switched tabs.";
+      return `Switched to tab: ${match.title || "Untitled"}`;
     }
     case "read_current_page":
       return collectActiveTabContext();
@@ -393,6 +428,29 @@ async function runBrowserAction(action: BrowserAction) {
 
 async function createRealtimeSecret(settings: BwithuSettings) {
   const storedSettings = await loadStoredSettings(settings);
+
+  // OpenAI Realtime path — create ephemeral session key
+  if (storedSettings.openAiKey) {
+    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${storedSettings.openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-realtime-preview",
+        voice: storedSettings.voiceId || "coral",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Could not start OpenAI voice session (${response.status}).`);
+    }
+    const data = (await response.json()) as { client_secret?: { value: string; expires_at: number } };
+    if (!data.client_secret?.value) throw new Error("OpenAI did not return a session token.");
+    return { value: data.client_secret.value, expires_at: data.client_secret.expires_at };
+  }
+
+  // Grok Realtime path
   assertApiKey(storedSettings);
 
   let response: Response;
@@ -596,10 +654,120 @@ function withoutBlankProviderKeys(settings: Partial<BwithuSettings>): Partial<Bw
   return next;
 }
 
-function normalizeBrainReply(content: string, originalText: string): BrainReply {
+interface TabMatchResult {
+  tab: ChromeTab;
+  confidence: number;
+}
+
+function escapeRegExp(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchTabs(query: string, tabs: ChromeTab[]): TabMatchResult[] {
+  const normalizedQuery = query.toLowerCase().trim();
+  if (!normalizedQuery) return [];
+
+  // Index-based matching
+  const indexMatch = normalizedQuery.match(/(?:tab\s+)?(\d+)/);
+  let targetIndex = -1;
+  if (indexMatch) {
+    targetIndex = parseInt(indexMatch[1], 10) - 1;
+  } else {
+    const ordinals = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+    for (let i = 0; i < ordinals.length; i++) {
+      if (normalizedQuery.includes(ordinals[i])) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (normalizedQuery.includes("last")) {
+      targetIndex = tabs.length - 1;
+    }
+  }
+
+  if (targetIndex >= 0 && targetIndex < tabs.length) {
+    return [{ tab: tabs[targetIndex], confidence: 1.0 }];
+  }
+
+  const results: TabMatchResult[] = [];
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    const title = (tab.title ?? "").toLowerCase();
+    const url = (tab.url ?? "").toLowerCase();
+    let confidence = 0;
+
+    if (title === normalizedQuery) {
+      confidence = 1.0;
+    } else if (title.startsWith(normalizedQuery)) {
+      confidence = 0.9;
+    } else if (new RegExp(`\\b${escapeRegExp(normalizedQuery)}\\b`).test(title)) {
+      confidence = 0.85;
+    } else if (title.includes(normalizedQuery)) {
+      confidence = 0.75;
+    } else if (url.includes(normalizedQuery)) {
+      confidence = 0.65;
+    }
+
+    if (confidence > 0) {
+      results.push({ tab, confidence });
+    }
+  }
+
+  return results.sort((a, b) => b.confidence - a.confidence);
+}
+
+async function normalizeBrainReply(content: string, originalText: string): Promise<BrainReply> {
   try {
     const parsed = JSON.parse(stripCodeFence(content)) as Partial<BrainReply>;
     if (parsed.type === "browser_action" && parsed.action) {
+      // Intercept switch_tab action for smart matching
+      if (parsed.action.kind === "switch_tab") {
+        const query = parsed.action.payload.query || parsed.action.payload.index || "";
+        const tabs = await chromeApi.tabs.query({});
+        const matches = matchTabs(query, tabs);
+
+        if (matches.length === 1 && matches[0].confidence >= 0.7) {
+          return {
+            type: "browser_action",
+            message: `Switching to tab "${matches[0].tab.title}"`,
+            action: {
+              kind: "switch_tab",
+              payload: { tabId: String(matches[0].tab.id), query }
+            },
+            requiresConfirmation: false,
+            display: parsed.display,
+            memoryUpdate: parsed.memoryUpdate,
+          };
+        } else if (matches.length > 1) {
+          const pickerContent = matches
+            .slice(0, 4)
+            .map((m) => {
+              const domain = m.tab.url ? new URL(m.tab.url).hostname.replace(/^www\./, "") : "";
+              return `${m.tab.id}:${m.tab.title || "Untitled"}${domain ? ` (${domain})` : ""}`;
+            })
+            .join("\n");
+
+          return {
+            type: "reply",
+            message: `I found multiple matching tabs. Which one should I switch to?`,
+            requiresConfirmation: false,
+            display: {
+              kind: "tab_picker",
+              title: `Tabs matching "${query}"`,
+              content: pickerContent,
+            },
+            memoryUpdate: parsed.memoryUpdate,
+          };
+        } else {
+          return {
+            type: "reply",
+            message: `I couldn't find any tab matching "${query}". Would you like me to open a new tab or search instead?`,
+            requiresConfirmation: false,
+            memoryUpdate: parsed.memoryUpdate,
+          };
+        }
+      }
+
       return {
         type: "browser_action",
         message: parsed.message || "I can do that. Should I?",
@@ -620,6 +788,47 @@ function normalizeBrainReply(content: string, originalText: string): BrainReply 
   } catch {
     const localAction = parseLocalCommand(originalText);
     if (localAction) {
+      if (localAction.kind === "switch_tab") {
+        const query = localAction.payload.query || "";
+        const tabs = await chromeApi.tabs.query({});
+        const matches = matchTabs(query, tabs);
+        if (matches.length === 1 && matches[0].confidence >= 0.7) {
+          return {
+            type: "browser_action",
+            message: `Switching to tab "${matches[0].tab.title}"`,
+            action: {
+              kind: "switch_tab",
+              payload: { tabId: String(matches[0].tab.id), query }
+            },
+            requiresConfirmation: false,
+          };
+        } else if (matches.length > 1) {
+          const pickerContent = matches
+            .slice(0, 4)
+            .map((m) => {
+              const domain = m.tab.url ? new URL(m.tab.url).hostname.replace(/^www\./, "") : "";
+              return `${m.tab.id}:${m.tab.title || "Untitled"}${domain ? ` (${domain})` : ""}`;
+            })
+            .join("\n");
+          return {
+            type: "reply",
+            message: `I found multiple tabs for "${query}". Which one should I switch to?`,
+            requiresConfirmation: false,
+            display: {
+              kind: "tab_picker",
+              title: `Tabs matching "${query}"`,
+              content: pickerContent,
+            },
+          };
+        } else {
+          return {
+            type: "reply",
+            message: `I couldn't find a tab for "${query}".`,
+            requiresConfirmation: false,
+          };
+        }
+      }
+
       return {
         type: "browser_action",
         message: "I can do that. Should I?",
@@ -679,13 +888,23 @@ function getSearchQuery(text: string) {
 
   if (/^(open|switch|hide)\b/.test(lower)) return "";
 
+  // If user explicitly asks to "Google X" or "search google for X" or "open search results for X",
+  // return empty to skip background search (it will trigger open_search browser action instead).
+  if (/^(google\s+|search\s+google\s+(?:for\s+)?|open\s+google\s+|open\s+search\s+results\s+for\s+)/i.test(lower)) {
+    return "";
+  }
+
   const currentIntent =
     /\b(today|latest|current|now|recent|news|weather|price|pricing|stock|release|launched|happening|updated|2026)\b/.test(lower);
   const researchIntent =
     /\b(search the web|look up|find out|research|compare|best|recommend|reviews|who is|what is happening|tell me about)\b/.test(lower);
 
   if (currentIntent || researchIntent) {
-    return trimmed.replace(/^search (for )?/i, "").replace(/^look up /i, "").trim();
+    return trimmed
+      .replace(/^search (for )?/i, "")
+      .replace(/^look up /i, "")
+      .replace(/^search the web for /i, "")
+      .trim();
   }
 
   return "";

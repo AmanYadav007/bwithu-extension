@@ -5,18 +5,23 @@ interface SpeechBubbleProps {
   text: string;
   onComplete: () => void;
   hold?: boolean;
+  immediate?: boolean;
 }
 
-export default function SpeechBubble({ text, onComplete, hold = false }: SpeechBubbleProps) {
-  const [displayedText, setDisplayedText] = useState("");
+export default function SpeechBubble({ text, onComplete, hold = false, immediate = false }: SpeechBubbleProps) {
+  const [internalDisplayedText, setInternalDisplayedText] = useState("");
 
   useEffect(() => {
+    if (immediate) {
+      return;
+    }
+
     let charIndex = 0;
     let doneTimer: ReturnType<typeof setTimeout> | undefined;
 
     const typeTimer = setInterval(() => {
       charIndex += 1;
-      setDisplayedText(text.slice(0, charIndex));
+      setInternalDisplayedText(text.slice(0, charIndex));
 
       if (charIndex >= text.length) {
         clearInterval(typeTimer);
@@ -28,7 +33,9 @@ export default function SpeechBubble({ text, onComplete, hold = false }: SpeechB
       clearInterval(typeTimer);
       if (doneTimer) clearTimeout(doneTimer);
     };
-  }, [hold, onComplete, text]);
+  }, [hold, onComplete, text, immediate]);
+
+  const displayedText = immediate ? text : internalDisplayedText;
 
   return (
     <motion.div

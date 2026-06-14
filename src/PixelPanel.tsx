@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { BrowserAction, ConversationTurn } from "./brainClient";
 import type { BwithuSettings } from "./storage";
@@ -14,7 +14,6 @@ interface PixelPanelProps {
   assistantCaption: string;
   onSettingsChange: (settings: BwithuSettings) => void;
   onSendMessage: (text: string) => void;
-  onToggleRecording: () => void;
   onConfirmAction: () => void;
   onCancelAction: () => void;
   onResetPosition: () => void;
@@ -31,7 +30,6 @@ export default function PixelPanel({
   assistantCaption,
   onSettingsChange,
   onSendMessage,
-  onToggleRecording,
   onConfirmAction,
   onCancelAction,
   onResetPosition,
@@ -39,6 +37,11 @@ export default function PixelPanel({
 }: PixelPanelProps) {
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const feedEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, liveCaption, assistantCaption]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -114,26 +117,40 @@ export default function PixelPanel({
         </div>
       ) : (
         <>
-          <section className="bwithu-chat-log" aria-live="polite">
-            <div className="bwithu-chat-pair">
-              <p className="bwithu-chat-bubble bwithu-chat-bubble--user">
-                <span>You</span>
-                {liveCaption || lastMessage(messages, "user") || "Say something..."}
-              </p>
-              <p className="bwithu-chat-bubble bwithu-chat-bubble--bear">
-                <span>{settings.companionName || "Bumi"}</span>
-                {assistantCaption || lastMessage(messages, "assistant") || "I'm here."}
-              </p>
-            </div>
-            {messages.length > 0 && (
-              <div className="bwithu-chat-history">
-                {messages.slice(-2).map((message, index) => (
-                <p key={`${message.role}-${index}`} className={`bwithu-chat-log__${message.role}`}>
-                  <span>{message.role === "user" ? "You" : (settings.companionName || "Bumi")}:</span> {message.content}
-                </p>
-                ))}
+          <section className="bwithu-chat-feed scrollbar-thin" aria-live="polite">
+            {messages.length === 0 && !liveCaption && !assistantCaption && (
+              <div className="bwithu-chat-empty">
+                <span>👋</span>
+                <p>Ask {settings.companionName || "Bumi"} anything, or use the mic to start talking live!</p>
               </div>
             )}
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`bwithu-chat-msg bwithu-chat-msg--${message.role}`}
+              >
+                <div className="bwithu-chat-msg-bubble">
+                  {message.content}
+                </div>
+              </div>
+            ))}
+            {isRecording && liveCaption && (
+              <div className="bwithu-chat-msg bwithu-chat-msg--user bwithu-chat-msg--streaming">
+                <div className="bwithu-chat-msg-bubble">
+                  {liveCaption}
+                  <span className="bwithu-streaming-dot" />
+                </div>
+              </div>
+            )}
+            {assistantCaption && !messages.some((m) => m.role === "assistant" && m.content === assistantCaption) && (
+              <div className="bwithu-chat-msg bwithu-chat-msg--assistant bwithu-chat-msg--streaming">
+                <div className="bwithu-chat-msg-bubble">
+                  {assistantCaption}
+                  <span className="bwithu-streaming-dot" />
+                </div>
+              </div>
+            )}
+            <div ref={feedEndRef} />
           </section>
 
           {pendingAction && (
@@ -151,18 +168,10 @@ export default function PixelPanel({
           )}
 
           <form className="bwithu-chat-form" onSubmit={submit}>
-            <button
-              className={isRecording ? "bwithu-mic bwithu-mic--active" : "bwithu-mic"}
-              type="button"
-              onClick={onToggleRecording}
-              aria-label={isRecording ? "Stop listening" : "Start listening"}
-            >
-              {isRecording ? "on" : "mic"}
-            </button>
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={`Talk to ${settings.companionName || "Bumi"}...`}
+              placeholder={`Type to ${settings.companionName || "Bumi"}...`}
               aria-label={`Message ${settings.companionName || "Bumi"}`}
             />
             <button type="submit">Send</button>
@@ -182,7 +191,16 @@ export default function PixelPanel({
             />
           </label>
           <label>
-            Grok key
+            OpenAI key (for voice)
+            <input
+              value={settings.openAiKey || ""}
+              onChange={(event) => onSettingsChange({ ...settings, openAiKey: event.target.value.trim() })}
+              placeholder="sk-... (recommended for voice)"
+              type="password"
+            />
+          </label>
+          <label>
+            Grok key (for text/search)
             <input
               value={settings.apiKey}
               onChange={(event) => onSettingsChange({ ...settings, apiKey: event.target.value.trim() })}
@@ -225,10 +243,23 @@ export default function PixelPanel({
               Voice
               <select
                 value={settings.voiceId}
-              onChange={(event) => onSettingsChange({ ...settings, voiceId: event.target.value as BwithuSettings["voiceId"] })}
+                onChange={(event) => onSettingsChange({ ...settings, voiceId: event.target.value })}
               >
-                <option value="ara">female</option>
-                <option value="rex">male</option>
+                {settings.openAiKey ? (
+                  <>
+                    <option value="coral">Coral (warm)</option>
+                    <option value="alloy">Alloy (neutral)</option>
+                    <option value="verse">Verse (male)</option>
+                    <option value="shimmer">Shimmer</option>
+                    <option value="ash">Ash</option>
+                    <option value="sage">Sage</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="ara">Ara (female)</option>
+                    <option value="rex">Rex (male)</option>
+                  </>
+                )}
               </select>
             </label>
           </div>
@@ -276,9 +307,6 @@ export default function PixelPanel({
   );
 }
 
-function lastMessage(messages: ConversationTurn[], role: ConversationTurn["role"]) {
-  return [...messages].reverse().find((message) => message.role === role)?.content;
-}
 
 function describeAction(action: BrowserAction, companionName: string) {
   switch (action.kind) {

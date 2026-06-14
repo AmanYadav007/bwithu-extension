@@ -18,7 +18,7 @@ export interface BrainReply {
   action?: BrowserAction;
   requiresConfirmation: boolean;
   display?: {
-    kind: "weather" | "search" | "info";
+    kind: "weather" | "search" | "info" | "tab_picker" | "confirmation" | "error" | "memory";
     title: string;
     content: string;
   };

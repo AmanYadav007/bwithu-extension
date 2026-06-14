@@ -1,8 +1,9 @@
 import { createRealtimeSecret } from "./brainClient";
 import type { BwithuSettings } from "./storage";
+import { getActivePageContext } from "./pageContext";
 
 const SAMPLE_RATE = 24000;
-const MODEL = "grok-voice-think-fast-1.0";
+const GROK_MODEL = "grok-voice-think-fast-1.0";
 
 interface RealtimeVoiceCallbacks {
   onUserTranscript: (text: string) => void;
@@ -14,7 +15,9 @@ interface RealtimeVoiceCallbacks {
 export class RealtimeVoiceSession {
   private readonly settings: BwithuSettings;
   private readonly callbacks: RealtimeVoiceCallbacks;
-  private audioContext: AudioContext | null = null;
+  private captureContext: AudioContext | null = null;
+  private playbackContext: AudioContext | null = null;
+  private nativeSampleRate = 44100;
   private source: MediaStreamAudioSourceNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private stream: MediaStream | null = null;
@@ -26,7 +29,7 @@ export class RealtimeVoiceSession {
   private activeSources = new Set<AudioBufferSourceNode>();
   private heardUserTranscript = false;
   private responseActive = false;
-  private readonly pageContext: string;
+  private pageContext: string;
 
   constructor(
     settings: BwithuSettings,
@@ -39,7 +42,8 @@ export class RealtimeVoiceSession {
   }
 
   async start() {
-    this.callbacks.onStatus("Opening Bumi's live voice...");
+    const name = this.settings.companionName || "Bumi";
+    this.callbacks.onStatus(`Connecting ${name}...`);
     const [secret] = await Promise.all([createRealtimeSecret(this.settings), this.startMic()]);
     this.openSocket(secret.value);
   }
@@ -51,7 +55,8 @@ export class RealtimeVoiceSession {
         this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
         this.requestResponse();
       }
-      this.callbacks.onStatus(requestResponse ? "Bumi is answering..." : "Bumi stopped listening.");
+      const name = this.settings.companionName || "Bumi";
+      this.callbacks.onStatus(requestResponse ? `${name} is answering...` : "Stopped.");
     }
   }
 
@@ -61,8 +66,10 @@ export class RealtimeVoiceSession {
     this.ws?.close();
     this.ws = null;
     this.connected = false;
-    void this.audioContext?.close();
-    this.audioContext = null;
+    void this.captureContext?.close();
+    void this.playbackContext?.close();
+    this.captureContext = null;
+    this.playbackContext = null;
   }
 
   private async startMic() {
@@ -73,22 +80,25 @@ export class RealtimeVoiceSession {
         autoGainControl: true,
       },
     });
-    this.audioContext = new AudioContext({
-      sampleRate: SAMPLE_RATE,
-      latencyHint: "interactive",
-    });
-    if (this.audioContext.state === "suspended") await this.audioContext.resume();
-    this.source = this.audioContext.createMediaStreamSource(this.stream);
-    this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
-    const silentMonitor = this.audioContext.createGain();
+
+    // Use the browser's native sampleRate to avoid resampling bugs with createMediaStreamSource.
+    // We manually downsample to SAMPLE_RATE before encoding.
+    this.captureContext = new AudioContext({ latencyHint: "interactive" });
+    this.nativeSampleRate = this.captureContext.sampleRate;
+
+    if (this.captureContext.state === "suspended") await this.captureContext.resume();
+    this.source = this.captureContext.createMediaStreamSource(this.stream);
+    this.processor = this.captureContext.createScriptProcessor(4096, 1, 1);
+    const silentMonitor = this.captureContext.createGain();
     silentMonitor.gain.value = 0;
     this.source.connect(this.processor);
     this.processor.connect(silentMonitor);
-    silentMonitor.connect(this.audioContext.destination);
+    silentMonitor.connect(this.captureContext.destination);
 
     this.processor.onaudioprocess = (event) => {
       const input = event.inputBuffer.getChannelData(0);
-      const chunk = float32ToBase64PCM16(input);
+      const downsampled = downsampleFloat32(input, this.nativeSampleRate, SAMPLE_RATE);
+      const chunk = float32ToBase64PCM16(downsampled);
       if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk }));
       } else {
@@ -107,32 +117,52 @@ export class RealtimeVoiceSession {
   }
 
   private openSocket(secret: string) {
-    const url = `wss://api.x.ai/v1/realtime?model=${MODEL}&smart_turn=0.5&smart_turn_timeout=1500`;
-    this.ws = new WebSocket(url, [`xai-client-secret.${secret}`]);
+    const isOpenAI = Boolean(this.settings.openAiKey);
+    const url = isOpenAI
+      ? `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`
+      : `wss://api.x.ai/v1/realtime?model=${GROK_MODEL}&smart_turn=0.5&smart_turn_timeout=1200`;
+    const protocols: string[] = isOpenAI
+      ? ["realtime", `openai-insecure-api-key.${secret}`]
+      : [`xai-client-secret.${secret}`];
+
+    this.ws = new WebSocket(url, protocols);
 
     this.ws.onopen = () => {
       this.connected = true;
       const name = this.settings.companionName || "Bumi";
-      this.callbacks.onStatus(`${name} is listening live...`);
-      this.ws?.send(
-        JSON.stringify({
-          type: "session.update",
-          session: {
-            voice: this.settings.voiceId,
-            instructions: `You are ${name}, a tiny living bear companion sharing the user's screen. ${this.settings.memory ? `Persistent memory of the user: ${this.settings.memory}. ` : ""}Speak like a warm friend on a phone call: natural, emotionally present, and never robotic. Use short human phrases, tiny pauses, and warm acknowledgements like "mm", "okay", or "I see" when they fit. Keep most replies under two short sentences unless the user asks for more. If the user interrupts you, stop and listen. Use the current browser/page context when the user asks what is on screen or around the browser.\n\nCurrent browser context:\n${this.pageContext.slice(0, 6000)}`,
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              silence_duration_ms: 450,
-              prefix_padding_ms: 300,
-            },
-            audio: {
-              input: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
-              output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
-            },
-          },
-        }),
-      );
+      this.callbacks.onStatus(`${name} is listening...`);
+
+      const instructions = `You are ${name}, a warm AI companion on a live voice call with the user. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Keep it natural — short replies (1-2 sentences), use conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Reference browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
+
+      const sessionConfig = isOpenAI ? {
+        modalities: ["text", "audio"],
+        voice: this.settings.voiceId || "coral",
+        instructions,
+        input_audio_format: "pcm16",
+        output_audio_format: "pcm16",
+        input_audio_transcription: { model: "whisper-1" },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.45,
+          silence_duration_ms: 350,
+          prefix_padding_ms: 200,
+        },
+      } : {
+        voice: this.settings.voiceId || "ara",
+        instructions,
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.45,
+          silence_duration_ms: 350,
+          prefix_padding_ms: 200,
+        },
+        audio: {
+          input: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
+          output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
+        },
+      };
+
+      this.ws?.send(JSON.stringify({ type: "session.update", session: sessionConfig }));
 
       for (const audio of this.earlyAudio) {
         this.ws?.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
@@ -146,7 +176,7 @@ export class RealtimeVoiceSession {
     };
 
     this.ws.onerror = () => {
-      this.callbacks.onStatus("Bumi's live voice connection stumbled.");
+      this.callbacks.onStatus("Voice connection failed. Check your API key in settings.");
     };
 
     this.ws.onclose = () => {
@@ -162,7 +192,8 @@ export class RealtimeVoiceSession {
       return;
     }
 
-    if (type === "response.output_audio.delta" && typeof event.delta === "string") {
+    // OpenAI: response.audio.delta | Grok: response.output_audio.delta
+    if ((type === "response.audio.delta" || type === "response.output_audio.delta") && typeof event.delta === "string") {
       this.playPcmDelta(event.delta);
       return;
     }
@@ -170,18 +201,24 @@ export class RealtimeVoiceSession {
     if (type === "input_audio_buffer.speech_started") {
       this.stopPlayback();
       this.assistantText = "";
-      this.callbacks.onStatus("Bumi is listening...");
+      const name = this.settings.companionName || "Bumi";
+      this.callbacks.onStatus(`${name} is listening...`);
+      void this.updateLivePageContext();
       try {
         if (this.responseActive) this.ws?.send(JSON.stringify({ type: "response.cancel" }));
       } catch {
-        // Some realtime-compatible providers may ignore cancellation.
+        // ignore cancellation errors
       }
       this.responseActive = false;
       return;
     }
 
+    // OpenAI: response.audio_transcript.delta | Grok: response.output_audio_transcript.delta
     if (
-      (type === "response.text.delta" || type === "response.output_text.delta" || type === "response.output_audio_transcript.delta") &&
+      (type === "response.text.delta" ||
+        type === "response.output_text.delta" ||
+        type === "response.output_audio_transcript.delta" ||
+        type === "response.audio_transcript.delta") &&
       typeof event.delta === "string"
     ) {
       this.assistantText += event.delta;
@@ -208,8 +245,8 @@ export class RealtimeVoiceSession {
     }
 
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      this.callbacks.onStatus("Bumi is answering...");
-      // Let the server VAD automatically trigger response creation.
+      const name = this.settings.companionName || "Bumi";
+      this.callbacks.onStatus(`${name} is thinking...`);
       return;
     }
   }
@@ -220,21 +257,28 @@ export class RealtimeVoiceSession {
     this.ws.send(JSON.stringify({ type: "response.create" }));
   }
 
+  private getPlaybackContext(): AudioContext {
+    if (!this.playbackContext) {
+      this.playbackContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    }
+    return this.playbackContext;
+  }
+
   private playPcmDelta(base64: string) {
-    if (!this.audioContext) return;
-    if (this.audioContext.state === "suspended") void this.audioContext.resume();
+    const ctx = this.getPlaybackContext();
+    if (ctx.state === "suspended") void ctx.resume();
     const float32 = base64PCM16ToFloat32(base64);
-    const buffer = this.audioContext.createBuffer(1, float32.length, SAMPLE_RATE);
+    const buffer = ctx.createBuffer(1, float32.length, SAMPLE_RATE);
     buffer.copyToChannel(float32, 0);
 
-    const source = this.audioContext.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.audioContext.destination);
+    source.connect(ctx.destination);
     source.addEventListener("ended", () => {
       this.activeSources.delete(source);
     }, { once: true });
 
-    const now = this.audioContext.currentTime;
+    const now = ctx.currentTime;
     this.playTime = Math.max(this.playTime, now);
     source.start(this.playTime);
     this.activeSources.add(source);
@@ -243,15 +287,41 @@ export class RealtimeVoiceSession {
 
   private stopPlayback() {
     for (const source of this.activeSources) {
-      try {
-        source.stop();
-      } catch {
-        // Source may have already ended.
-      }
+      try { source.stop(); } catch { /* already ended */ }
     }
     this.activeSources.clear();
-    this.playTime = this.audioContext?.currentTime ?? 0;
+    this.playTime = this.playbackContext?.currentTime ?? 0;
   }
+
+  private async updateLivePageContext() {
+    try {
+      const context = await getActivePageContext();
+      this.pageContext = context;
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        const name = this.settings.companionName || "Bumi";
+        const instructions = `You are ${name}, a warm AI companion on a live voice call with the user. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Keep it natural — short replies (1-2 sentences), use conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Reference browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
+        this.ws.send(JSON.stringify({ type: "session.update", session: { instructions } }));
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+}
+
+function downsampleFloat32(input: Float32Array, inputRate: number, outputRate: number): Float32Array {
+  if (inputRate === outputRate) return input;
+  const ratio = inputRate / outputRate;
+  const outputLength = Math.floor(input.length / ratio);
+  const output = new Float32Array(outputLength);
+  for (let i = 0; i < outputLength; i++) {
+    const pos = i * ratio;
+    const index = Math.floor(pos);
+    const frac = pos - index;
+    output[i] = index + 1 < input.length
+      ? input[index] * (1 - frac) + input[index + 1] * frac
+      : input[index];
+  }
+  return output;
 }
 
 function float32ToBase64PCM16(float32Array: Float32Array) {

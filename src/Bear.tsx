@@ -10,9 +10,10 @@ import type { BearState } from "./animationStates";
 import type { BearMood } from "./behaviorController";
 import { playClickPop } from "./sounds";
 import type { BearPosition, BwithuSettings } from "./storage";
+import type { BrowserAction } from "./brainClient";
 import { loadBearPosition, saveBearPosition } from "./storage";
 
-const SIZE = 280;
+const SIZE = 320;
 const DEFAULT_MARGIN = 40;
 
 interface ChromeLike {
@@ -29,10 +30,11 @@ interface BearProps {
   mood: BearMood;
   panelOpen: boolean;
   display?: {
-    kind: "weather" | "search" | "info";
+    kind: "weather" | "search" | "info" | "tab_picker" | "confirmation" | "error" | "memory";
     title: string;
     content: string;
   } | null;
+  pendingAction?: BrowserAction | null;
   onCloseDisplay?: () => void;
   onSpawnComplete: () => void;
   onIntroComplete: () => void;
@@ -41,7 +43,14 @@ interface BearProps {
   onOpenPanel: () => void;
   onDragReaction: () => void;
   onHoverReaction: () => void;
+  onConfirmAction?: () => void;
+  onCancelAction?: () => void;
+  onSelectTab?: (tabId: number) => void;
+  isRecording: boolean;
+  onToggleRecording: () => void;
+  immediateSpeech?: boolean;
   controls?: ReactNode;
+  isSidePanel?: boolean;
 }
 
 function resolveAsset(filename: string): string {
@@ -109,6 +118,7 @@ export default function Bear({
   mood,
   panelOpen,
   display,
+  pendingAction,
   onCloseDisplay,
   onSpawnComplete,
   onIntroComplete,
@@ -117,11 +127,18 @@ export default function Bear({
   onOpenPanel,
   onDragReaction,
   onHoverReaction,
+  onConfirmAction,
+  onCancelAction,
+  onSelectTab,
+  isRecording,
+  onToggleRecording,
+  immediateSpeech = false,
   controls,
+  isSidePanel = false,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
-  const [positionReady, setPositionReady] = useState(false);
+  const [positionReady, setPositionReady] = useState(isSidePanel);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [glbUnavailable, setGlbUnavailable] = useState(false);
   const [isWandering, setIsWandering] = useState(false);
@@ -137,18 +154,23 @@ export default function Bear({
   }, []);
 
   useEffect(() => {
+    let active = true;
     if (state === "searching" || state === "think") {
-      triggerReaction("🤔");
+      setTimeout(() => { if (active) triggerReaction("🤔"); }, 0);
     } else if (state === "happy" || state === "wave") {
-      triggerReaction(Math.random() > 0.5 ? "✨" : "❤️");
+      setTimeout(() => { if (active) triggerReaction(Math.random() > 0.5 ? "✨" : "❤️"); }, 0);
     } else if (state === "listen") {
-      triggerReaction("👀");
+      setTimeout(() => { if (active) triggerReaction("👀"); }, 0);
     } else if (state === "sleepy" || state === "sleep") {
-      triggerReaction("😴");
+      setTimeout(() => { if (active) triggerReaction("😴"); }, 0);
     }
+    return () => {
+      active = false;
+    };
   }, [state, triggerReaction]);
 
   useEffect(() => {
+    if (isSidePanel) return;
     let cancelled = false;
 
     async function restorePosition() {
@@ -165,9 +187,10 @@ export default function Bear({
     return () => {
       cancelled = true;
     };
-  }, [x, y]);
+  }, [x, y, isSidePanel]);
 
   useEffect(() => {
+    if (isSidePanel) return;
     function keepInsideViewport() {
       const next = clampPosition({ x: x.get(), y: y.get() });
       x.set(next.x);
@@ -176,7 +199,7 @@ export default function Bear({
 
     window.addEventListener("resize", keepInsideViewport);
     return () => window.removeEventListener("resize", keepInsideViewport);
-  }, [x, y]);
+  }, [x, y, isSidePanel]);
 
   useEffect(() => {
     if (!useGlbRenderer || state !== "spawning") return undefined;
@@ -185,7 +208,7 @@ export default function Bear({
   }, [onSpawnComplete, state, useGlbRenderer]);
 
   useEffect(() => {
-    if (!positionReady || panelOpen || state !== "idle") return;
+    if (isSidePanel || !positionReady || panelOpen || state !== "idle") return;
 
     wanderTimerRef.current = setTimeout(() => {
       const current = { x: x.get(), y: y.get() };
@@ -206,7 +229,7 @@ export default function Bear({
     return () => {
       if (wanderTimerRef.current) clearTimeout(wanderTimerRef.current);
     };
-  }, [panelOpen, positionReady, settings.wanderIntensity, state, x, y]);
+  }, [panelOpen, positionReady, settings.wanderIntensity, state, x, y, isSidePanel]);
 
   const animationState = state === "hidden" ? "idle" : (isWandering && state === "idle" ? "walk" : state);
   const config = animationConfigs[animationState] ?? animationConfigs.idle;
@@ -232,17 +255,19 @@ export default function Bear({
 
   return (
     <motion.div
-      drag
-      dragMomentum
+      drag={!isSidePanel}
+      dragMomentum={!isSidePanel}
       dragElastic={0.09}
       onPointerDown={handlePointerDown}
       onClick={handleClick}
       onMouseEnter={onHoverReaction}
       onDrag={() => {
+        if (isSidePanel) return;
         hasDraggedRef.current = true;
         onDragReaction();
       }}
       onDragEnd={(_, info) => {
+        if (isSidePanel) return;
         hasDraggedRef.current = Math.abs(info.offset.x) > 3 || Math.abs(info.offset.y) > 3;
         const next = clampPosition({ x: x.get(), y: y.get() });
         x.set(next.x);
@@ -259,16 +284,17 @@ export default function Bear({
         scale: { duration: 0.3 },
         opacity: { duration: 0.2 },
       }}
-      whileDrag={{ cursor: "grabbing", scale: 1.05, rotate: 2 }}
+      whileDrag={isSidePanel ? undefined : { cursor: "grabbing", scale: 1.05, rotate: 2 }}
       style={{
-        position: "fixed",
-        left: 0,
-        top: 0,
-        x,
-        y,
+        position: isSidePanel ? "relative" : "fixed",
+        left: isSidePanel ? "auto" : 0,
+        top: isSidePanel ? "auto" : 0,
+        x: isSidePanel ? 0 : x,
+        y: isSidePanel ? 0 : y,
+        margin: isSidePanel ? "0 auto" : undefined,
         width: SIZE,
         height: SIZE,
-        cursor: "grab",
+        cursor: isSidePanel ? "default" : "grab",
         pointerEvents: "auto",
         userSelect: "none",
         touchAction: "none",
@@ -295,6 +321,20 @@ export default function Bear({
           scaleY: { repeat: state === "idle" || state === "listen" || state === "sleepy" ? Infinity : 0, duration: 2.6, ease: "easeInOut" },
         }}
       >
+        {state === "spawning" && (
+          <div
+            className="bwithu-portal"
+            style={{
+              position: "absolute",
+              left: (SIZE - 196) / 2,
+              top: (SIZE - 196) / 2,
+              right: "auto",
+              bottom: "auto",
+              zIndex: -1,
+            }}
+            aria-hidden="true"
+          />
+        )}
         <div className="bwithu-bear-shadow" aria-hidden="true" />
         <AnimatePresence>
           {reactions.map((r) => (
@@ -323,16 +363,50 @@ export default function Bear({
           ))}
         </AnimatePresence>
         {(showIntro || speechText) && (
-          <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} />
+          <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} immediate={immediateSpeech} />
         )}
-        {display && onCloseDisplay && (
-          <InfoDisplay
-            key={display.content}
-            display={display}
-            onClose={onCloseDisplay}
-            position={x.get() > window.innerWidth / 2 ? "left" : "right"}
-          />
-        )}
+        {(() => {
+          const describeAction = (action: BrowserAction, companionName: string) => {
+            switch (action.kind) {
+              case "open_url":
+                return `Open "${action.payload.url}"`;
+              case "search":
+                return `Google search for "${action.payload.query}"`;
+              case "switch_tab":
+                return `Switch to tab "${action.payload.index || action.payload.query}"`;
+              case "read_current_page":
+                return "Read current page text";
+              case "read_tab_context":
+                return `Read tab details for ${action.payload.index || action.payload.query}`;
+              case "create_calendar_event":
+                return `Schedule event: ${action.payload.title || "Calendar Meeting"}`;
+              case "hide_bear":
+                return `Hide ${companionName}`;
+              default:
+                return "perform a browser command";
+            }
+          };
+
+          const activeDisplay = display || (pendingAction ? {
+            kind: "confirmation" as const,
+            title: "Action Confirmation",
+            content: describeAction(pendingAction, settings.companionName || "Bumi"),
+          } : null);
+
+          if (!activeDisplay) return null;
+
+          return (
+            <InfoDisplay
+              key={activeDisplay.content}
+              display={activeDisplay}
+              onClose={onCloseDisplay || (() => {})}
+              position={isSidePanel ? "center" : (x.get() > window.innerWidth / 2 ? "left" : "right")}
+              onConfirmAction={onConfirmAction}
+              onCancelAction={onCancelAction}
+              onSelectTab={onSelectTab}
+            />
+          );
+        })()}
         {controls}
         {useGlbRenderer ? (
           <GLBCharacter
@@ -362,6 +436,77 @@ export default function Bear({
           />
         )}
       </motion.div>
+      {/* Mini-dock — hidden in side panel (bottom bar handles this instead) */}
+      {!isSidePanel && !panelOpen && (
+        <motion.div
+          className="bwithu-mini-dock"
+          initial={{ opacity: 0.35 }}
+          whileHover={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            position: "absolute",
+            bottom: -32,
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            gap: 12,
+            background: "rgba(20, 15, 12, 0.82)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: "20px",
+            padding: "4px 12px",
+            pointerEvents: "auto",
+            backdropFilter: "blur(8px)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            zIndex: 1000,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={isRecording ? "bwithu-dock-btn bwithu-dock-btn--active" : "bwithu-dock-btn"}
+            onClick={onToggleRecording}
+            style={{
+              background: "transparent",
+              border: 0,
+              fontSize: 16,
+              cursor: "pointer",
+              padding: 0,
+              color: isRecording ? "#ef4444" : "#f1f5f9",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 24,
+              transition: "color 0.15s ease",
+            }}
+            title={isRecording ? "Stop listening" : "Talk to companion"}
+          >
+            🎙️
+          </button>
+          <button
+            type="button"
+            className="bwithu-dock-btn"
+            onClick={onOpenPanel}
+            style={{
+              background: "transparent",
+              border: 0,
+              fontSize: 16,
+              cursor: "pointer",
+              padding: 0,
+              color: "#f1f5f9",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 24,
+            }}
+            title="Open chat"
+          >
+            💬
+          </button>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

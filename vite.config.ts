@@ -44,6 +44,7 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       input: {
+        index: resolve(__dirname, 'index.html'),
         content: resolve(__dirname, 'src/content.tsx'),
         background: resolve(__dirname, 'src/background.ts'),
       },

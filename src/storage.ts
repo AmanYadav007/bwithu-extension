@@ -8,10 +8,11 @@ export interface BearPosition {
 
 export interface BwithuSettings {
   apiKey: string;
+  openAiKey: string;
   braveApiKey: string;
   googleClientId: string;
   characterRenderer: "glb" | "sprite";
-  voiceId: "ara" | "rex";
+  voiceId: string;
   soundEnabled: boolean;
   voiceEnabled: boolean;
   wanderIntensity: "calm" | "curious" | "adventurous";
@@ -23,10 +24,11 @@ export interface BwithuSettings {
 
 export const DEFAULT_SETTINGS: BwithuSettings = {
   apiKey: "",
+  openAiKey: "",
   braveApiKey: "",
   googleClientId: "",
   characterRenderer: "glb",
-  voiceId: "ara",
+  voiceId: "coral",
   soundEnabled: true,
   voiceEnabled: true,
   wanderIntensity: "adventurous",
@@ -114,9 +116,9 @@ function withoutBlankProviderKeys(settings?: Partial<BwithuSettings>): Partial<B
   if (!settings) return {};
   const next = { ...settings };
   if (!next.apiKey) delete next.apiKey;
+  if (!next.openAiKey) delete next.openAiKey;
   if (!next.braveApiKey) delete next.braveApiKey;
   if (!next.googleClientId) delete next.googleClientId;
-  if (next.voiceId && next.voiceId !== "ara" && next.voiceId !== "rex") delete next.voiceId;
   return next;
 }
 

@@ -1,7 +1,7 @@
-import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const chrome: any;
 import Bear from "./Bear";
-import QuickControls from "./QuickControls";
 import PixelPanel from "./PixelPanel";
 import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
@@ -9,7 +9,7 @@ import type { BehaviorEvent } from "./behaviorController";
 import type { BrowserAction, BrainReply, ConversationTurn } from "./brainClient";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { useBearStore } from "./bearStore";
-import { collectPageContext } from "./pageContext";
+import { getActivePageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
 import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessages, resetBearPosition } from "./storage";
@@ -62,7 +62,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [showIntro, setShowIntro] = useState(false);
   const [speechText, setSpeechText] = useState("");
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
-  const [panelOpen, setPanelOpen] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [messages, setMessages] = useState<ConversationTurn[]>([]);
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
@@ -167,7 +166,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setSpeechText("");
         setLiveCaption("");
         setAssistantCaption("");
-        setPanelOpen(false);
+        setShowChatPanel(false);
         setBearState("hidden");
         realtimeVoiceRef.current?.close();
         realtimeVoiceRef.current = null;
@@ -178,7 +177,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setShowIntro(false);
       setSpeechText("");
       setAssistantCaption("");
-      setPanelOpen(false);
+      setShowChatPanel(false);
       setBearState("spawning");
       if (settings.soundEnabled) {
         playSpawnChime();
@@ -211,6 +210,20 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   }, [dispatchBehavior]);
 
   useEffect(() => {
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      const handleActivated = () => {
+        dispatchBehavior("hovered"); // look around when user switches tab
+      };
+      chrome.tabs.onActivated.addListener(handleActivated);
+      chrome.tabs.onUpdated.addListener(handleActivated);
+      return () => {
+        chrome.tabs.onActivated.removeListener(handleActivated);
+        chrome.tabs.onUpdated.removeListener(handleActivated);
+      };
+    }
+  }, [dispatchBehavior]);
+
+  useEffect(() => {
     if (!enabled) return;
     const timer = setInterval(refreshEnvironmentalMood, 60_000);
     return () => clearInterval(timer);
@@ -230,14 +243,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setStatus("Bumi could not speak this time, but he heard you.");
     }
   }, [settings]);
-
-  const updateVoice = useCallback((voiceId: BwithuSettings["voiceId"]) => {
-    setSettings((current) => {
-      const next = { ...current, voiceId };
-      void saveSettings(next);
-      return next;
-    });
-  }, []);
 
   const handleSpawnComplete = useCallback(() => {
     setBearState("intro");
@@ -282,7 +287,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         console.log(`[${idx + 1}/10] Testing: "${t.cmd}" (${t.desc})`);
         
         // Simulating the flow
-        const reply = await sendTextMessage(t.cmd, settings, [], collectPageContext());
+        const reply = await sendTextMessage(t.cmd, settings, [], await getActivePageContext());
         
         if (reply && (reply.message || reply.action || reply.display)) {
           console.log(`✅ Passed: "${t.cmd}" -> Received message length: ${reply.message?.length || 0}`);
@@ -361,7 +366,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setActiveDisplay(null); // Clear previous TV screen details
 
       try {
-        const reply = await sendTextMessage(text, settings, nextHistory, collectPageContext());
+        const reply = await sendTextMessage(text, settings, nextHistory, await getActivePageContext());
         let assistantMessage = reply.message;
 
         // Persist learned user facts to settings memory
@@ -432,7 +437,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setBearState("curious");
       }
     },
-    [dispatchBehavior, messages, settings, handleVoiceAudioEnded],
+    [dispatchBehavior, messages, settings, handleVoiceAudioEnded, playVoiceReply, runCommandDiagnostics],
   );
 
   const stopRecording = useCallback(() => {
@@ -548,13 +553,29 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const startRecording = useCallback(async () => {
     if (isRecording) return;
-    if (!settings.apiKey && !settings.proxyUrl) {
-      setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
+    if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
+      setStatus("Add your API key in settings first.");
+      setSpeechText("I need an API key before I can talk.");
       return;
     }
 
+    // Request mic permission directly in the click handler (must stay close to the user gesture).
+    const chromeExt = (window as unknown as { chrome?: { permissions?: { request: (p: { permissions: string[] }) => Promise<boolean> } } }).chrome;
+    if (chromeExt?.permissions?.request) {
+      try {
+        const granted = await chromeExt.permissions.request({ permissions: ["microphone"] });
+        if (!granted) {
+          setSpeechText("I need microphone access to hear you. Please allow it when Chrome asks.");
+          setStatus("Microphone permission denied.");
+          return;
+        }
+      } catch {
+        // permissions.request not available in this context — proceed and let getUserMedia handle it
+      }
+    }
+
     setVoiceDialogueActive(true);
-    setPanelOpen(true);
+    setShowChatPanel(false);
     setLiveCaption("");
     setAssistantCaption("");
     setSpeechText("I'm listening...");
@@ -563,7 +584,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     dispatchBehavior("voiceStarted");
 
     try {
-      const browserContext = await getBrowserContext(collectPageContext());
+      const browserContext = await getBrowserContext(await getActivePageContext());
       const session = new RealtimeVoiceSession(settings, {
         onUserTranscript: (text) => {
           setLiveCaption(text);
@@ -621,16 +642,27 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     }
   }, [onRequestHide, pendingAction, settings.soundEnabled]);
 
+  const handleSelectTab = useCallback(async (tabId: number) => {
+    setActiveDisplay(null);
+    setStatus("Switched tabs.");
+    if (settings.soundEnabled) playClickPop();
+    try {
+      await runBrowserAction({ kind: "switch_tab", payload: { tabId: String(tabId) } });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not switch tab.");
+    }
+  }, [settings.soundEnabled]);
+
   useEffect(() => {
     startRecordingRef.current = startRecording;
     handleSendMessageRef.current = handleSendMessage;
   }, [startRecording, handleSendMessage]);
 
   return (
-    <AnimatePresence>
-      {enabled && bearState !== "hidden" && (
-        <>
-          {bearState === "spawning" && <div className="bwithu-portal" aria-hidden="true" />}
+    <div className="bwithu-sidepanel-layout">
+      {/* Bear fills the top — fullscreen character area */}
+      <div className="bwithu-bear-area">
+        {enabled && bearState !== "hidden" && (
           <Bear
             key="b"
             state={bearState}
@@ -638,75 +670,114 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             speechText={speechText}
             settings={settings}
             mood={mood}
-            panelOpen={panelOpen || showChatPanel}
+            panelOpen={showChatPanel}
             display={activeDisplay}
+            pendingAction={pendingAction}
             onCloseDisplay={() => setActiveDisplay(null)}
+            onConfirmAction={handleConfirmAction}
+            onCancelAction={() => setPendingAction(null)}
+            onSelectTab={handleSelectTab}
+            isRecording={isRecording}
+            onToggleRecording={() => {
+              if (isRecording) stopRecording();
+              else void startRecording();
+            }}
+            immediateSpeech={isRecording || voiceDialogueActive}
             onSpawnComplete={handleSpawnComplete}
             onIntroComplete={handleIntroComplete}
             onLoopComplete={handleLoopComplete}
             onRequestWave={() => dispatchBehavior("clicked")}
-            onOpenPanel={() => setPanelOpen(true)}
+            onOpenPanel={() => setShowChatPanel(true)}
             onDragReaction={() => dispatchBehavior("dragged")}
             onHoverReaction={() => dispatchBehavior("hovered")}
-            controls={
-              showChatPanel ? (
-                <PixelPanel
-                  settings={settings}
-                  messages={messages}
-                  pendingAction={pendingAction}
-                  status={status}
-                  isRecording={isRecording}
-                  liveCaption={liveCaption}
-                  assistantCaption={assistantCaption}
-                  onSettingsChange={(nextSettings) => {
-                    setSettings((current) => {
-                      if (!current.onboardingCompleted && nextSettings.onboardingCompleted) {
-                        setSpeechText("");
-                        setBearState("wave");
-                        if (nextSettings.soundEnabled) playHappyChirp();
-                        setShowChatPanel(false);
-                      }
-                      void saveSettings(nextSettings);
-                      return nextSettings;
-                    });
-                  }}
-                  onSendMessage={handleSendMessage}
-                  onToggleRecording={() => {
-                    if (isRecording) stopRecording();
-                    else void startRecording();
-                  }}
-                  onConfirmAction={handleConfirmAction}
-                  onCancelAction={() => setPendingAction(null)}
-                  onResetPosition={async () => {
-                    await resetBearPosition();
-                    setStatus("Position reset!");
-                  }}
-                  onClose={() => setShowChatPanel(false)}
-                />
-              ) : panelOpen ? (
-                <QuickControls
-                  isRecording={isRecording}
-                  pendingAction={pendingAction}
-                  voiceId={settings.voiceId}
-                  onToggleRecording={() => {
-                    if (isRecording) stopRecording();
-                    else void startRecording();
-                  }}
-                  onToggleVoice={() => updateVoice(settings.voiceId === "ara" ? "rex" : "ara")}
-                  onSendMessage={handleSendMessage}
-                  onConfirmAction={handleConfirmAction}
-                  onCancelAction={() => setPendingAction(null)}
-                  onClose={() => setPanelOpen(false)}
-                  onOpenSettings={() => {
-                    setPanelOpen(false);
-                    setShowChatPanel(true);
-                  }}
-                />
-              ) : null
-            }
+            isSidePanel={true}
           />
-        </>
+        )}
+        {/* Live caption overlay during voice call */}
+        {voiceDialogueActive && (liveCaption || assistantCaption) && (
+          <div className="bwithu-caption-area">
+            {liveCaption && <p className="bwithu-caption bwithu-caption--user">{liveCaption}</p>}
+            {assistantCaption && <p className="bwithu-caption bwithu-caption--ai">{assistantCaption}</p>}
+          </div>
+        )}
+      </div>
+
+      {/* Chat panel */}
+      {showChatPanel && (
+        <PixelPanel
+          settings={settings}
+          messages={messages}
+          pendingAction={pendingAction}
+          status={status}
+          isRecording={isRecording}
+          liveCaption={liveCaption}
+          assistantCaption={assistantCaption}
+          onSettingsChange={(nextSettings) => {
+            setSettings((current) => {
+              if (!current.onboardingCompleted && nextSettings.onboardingCompleted) {
+                setSpeechText("");
+                setBearState("wave");
+                if (nextSettings.soundEnabled) playHappyChirp();
+                setShowChatPanel(false);
+              }
+              void saveSettings(nextSettings);
+              return nextSettings;
+            });
+          }}
+          onSendMessage={handleSendMessage}
+          onConfirmAction={handleConfirmAction}
+          onCancelAction={() => setPendingAction(null)}
+          onResetPosition={async () => {
+            await resetBearPosition();
+            setStatus("Position reset!");
+          }}
+          onClose={() => setShowChatPanel(false)}
+        />
       )}
-    </AnimatePresence>
+
+      {/* Bottom control bar — always visible once onboarded */}
+      {settings.onboardingCompleted ? (
+        <div className="bwithu-bottom-bar">
+          <button
+            type="button"
+            className={`bwithu-side-btn${showChatPanel ? " bwithu-side-btn--active" : ""}`}
+            onClick={() => setShowChatPanel((open) => !open)}
+            title="Chat"
+          >
+            💬
+          </button>
+          <button
+            type="button"
+            className={`bwithu-mic-main${isRecording ? " bwithu-mic-main--active" : ""}`}
+            onClick={() => { if (isRecording) stopRecording(); else void startRecording(); }}
+            title={isRecording ? "Stop listening" : "Talk to companion"}
+          >
+            🎙️
+          </button>
+          <button
+            type="button"
+            className="bwithu-side-btn"
+            onClick={() => setShowChatPanel(true)}
+            title="Settings"
+          >
+            ⚙️
+          </button>
+        </div>
+      ) : (
+        /* During onboarding, just show the chat panel trigger */
+        !showChatPanel && (
+          <div className="bwithu-bottom-bar bwithu-bottom-bar--onboarding">
+            <button
+              type="button"
+              className="bwithu-mic-main"
+              onClick={() => setShowChatPanel(true)}
+              title="Set up companion"
+            >
+              👋
+            </button>
+          </div>
+        )
+      )}
+    </div>
   );
 }
