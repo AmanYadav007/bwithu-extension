@@ -849,7 +849,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         <div className="bwithu-live-state">{liveStateText}</div>
       </div>
 
-      {(latestUserMessage || latestAssistantMessage) && (
+      {!showChatPanel && (latestUserMessage || latestAssistantMessage) && (
         <div className="bwithu-conversation-strip" aria-live="polite">
           {latestUserMessage && (
             <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">

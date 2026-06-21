@@ -54,8 +54,23 @@ export default function GLBCharacter({ modelSrc, state, mood, facing, width, hei
 
     const scene = new THREE.Scene();
     const aspect = width / height;
-    const zoom = 0.95;
-    const camera = new THREE.OrthographicCamera(-zoom * aspect, zoom * aspect, zoom, -zoom, 0.1, 100);
+    let left, right, top, bottom;
+    if (aspect < 1) {
+      // For narrow portrait views (e.g. side panel), set width constraint and let height scale out
+      const zoom = 0.75;
+      left = -zoom;
+      right = zoom;
+      top = zoom / aspect;
+      bottom = -zoom / aspect;
+    } else {
+      // For landscape/square views, set height constraint and let width scale out
+      const zoom = 1.25;
+      left = -zoom * aspect;
+      right = zoom * aspect;
+      top = zoom;
+      bottom = -zoom;
+    }
+    const camera = new THREE.OrthographicCamera(left, right, top, bottom, 0.1, 100);
     camera.position.set(0, 0.05, 5);
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
