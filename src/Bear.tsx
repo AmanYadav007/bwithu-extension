@@ -51,6 +51,8 @@ interface BearProps {
   immediateSpeech?: boolean;
   controls?: ReactNode;
   isSidePanel?: boolean;
+  sidePanelWidth?: number;
+  sidePanelHeight?: number;
 }
 
 function resolveAsset(filename: string): string {
@@ -135,6 +137,8 @@ export default function Bear({
   immediateSpeech = false,
   controls,
   isSidePanel = false,
+  sidePanelWidth = 320,
+  sidePanelHeight = 600,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
@@ -292,8 +296,8 @@ export default function Bear({
         x: isSidePanel ? 0 : x,
         y: isSidePanel ? 0 : y,
         margin: isSidePanel ? "0 auto" : undefined,
-        width: SIZE,
-        height: SIZE,
+        width: isSidePanel ? sidePanelWidth : SIZE,
+        height: isSidePanel ? sidePanelHeight : SIZE,
         cursor: isSidePanel ? "default" : "grab",
         pointerEvents: "auto",
         userSelect: "none",
@@ -326,8 +330,8 @@ export default function Bear({
             className="bwithu-portal"
             style={{
               position: "absolute",
-              left: (SIZE - 196) / 2,
-              top: (SIZE - 196) / 2,
+              left: ((isSidePanel ? sidePanelWidth : SIZE) - 196) / 2,
+              top: ((isSidePanel ? sidePanelHeight : SIZE) - 196) / 2,
               right: "auto",
               bottom: "auto",
               zIndex: -1,
@@ -363,7 +367,13 @@ export default function Bear({
           ))}
         </AnimatePresence>
         {(showIntro || speechText) && (
-          <SpeechBubble text={speechText || INTRO_TEXT} onComplete={showIntro ? onIntroComplete : () => undefined} hold={!showIntro} immediate={immediateSpeech} />
+          <SpeechBubble
+            text={speechText || INTRO_TEXT}
+            onComplete={showIntro ? onIntroComplete : () => undefined}
+            hold={!showIntro}
+            immediate={immediateSpeech}
+            isSidePanel={isSidePanel}
+          />
         )}
         {(() => {
           const describeAction = (action: BrowserAction, companionName: string) => {
@@ -414,7 +424,8 @@ export default function Bear({
             state={animationState}
             mood={mood}
             facing={facing}
-            size={SIZE}
+            width={isSidePanel ? sidePanelWidth : SIZE}
+            height={isSidePanel ? sidePanelHeight : SIZE}
             onLoadError={() => setGlbUnavailable(true)}
           />
         ) : (

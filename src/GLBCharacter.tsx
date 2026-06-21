@@ -9,7 +9,8 @@ interface GLBCharacterProps {
   state: BearState;
   mood: BearMood;
   facing: 1 | -1;
-  size: number;
+  width: number;
+  height: number;
   onLoadError: () => void;
 }
 
@@ -21,7 +22,7 @@ const moodGlow: Record<BearMood, THREE.ColorRepresentation> = {
   focused: "#72b7ff",
 };
 
-export default function GLBCharacter({ modelSrc, state, mood, facing, size, onLoadError }: GLBCharacterProps) {
+export default function GLBCharacter({ modelSrc, state, mood, facing, width, height, onLoadError }: GLBCharacterProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<THREE.Group | null>(null);
   const pointerRef = useRef({ x: 0, y: 0 });
@@ -52,12 +53,14 @@ export default function GLBCharacter({ modelSrc, state, mood, facing, size, onLo
     const mountElement = mount;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1.28, 1.28, 1.28, -1.28, 0.1, 100);
-    camera.position.set(0, 0.18, 5);
+    const aspect = width / height;
+    const zoom = 0.95;
+    const camera = new THREE.OrthographicCamera(-zoom * aspect, zoom * aspect, zoom, -zoom, 0.1, 100);
+    camera.position.set(0, 0.05, 5);
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(size, size);
+    renderer.setSize(width, height);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
     mountElement.appendChild(renderer.domElement);
@@ -129,9 +132,9 @@ export default function GLBCharacter({ modelSrc, state, mood, facing, size, onLo
       renderer.dispose();
       modelRef.current = null;
     };
-  }, [modelSrc, size]);
+  }, [modelSrc, width, height]);
 
-  return <div className="bwithu-glb-character" ref={mountRef} style={{ width: size, height: size }} aria-hidden="true" />;
+  return <div className="bwithu-glb-character" ref={mountRef} style={{ width, height }} aria-hidden="true" />;
 }
 
 function prepareModel(model: THREE.Group) {
@@ -143,7 +146,9 @@ function prepareModel(model: THREE.Group) {
 
   model.position.sub(center);
   const maxDimension = Math.max(size.x, size.y, size.z) || 1;
-  model.scale.setScalar(2.75 / maxDimension);
+  const baseScale = 2.25 / maxDimension;
+  model.scale.setScalar(baseScale);
+  model.userData.baseScale = baseScale;
   model.rotation.set(-0.16, 0.18, 0);
 
   model.traverse((child) => {
@@ -210,11 +215,12 @@ function animateModel(
     nod = -0.13 + Math.sin(elapsed * 1.1) * 0.035;
   }
 
-  const baseScale = 1 + breath;
-  model.scale.x = (facing === 1 ? 1 : -1) * baseScale * (1 + squash);
-  model.scale.y = baseScale * (1 - squash * 0.55);
-  model.scale.z = baseScale;
-  model.position.y = -0.04 + breath * 0.55 + bounce;
+  const modelBaseScale = typeof model.userData.baseScale === "number" ? model.userData.baseScale : 1;
+  const animatedScale = modelBaseScale * (1 + breath);
+  model.scale.x = (facing === 1 ? 1 : -1) * animatedScale * (1 + squash);
+  model.scale.y = animatedScale * (1 - squash * 0.55);
+  model.scale.z = animatedScale;
+  model.position.y = -0.45 + breath * 0.55 + bounce;
   model.rotation.x = -0.16 + attentionPitch + nod;
   model.rotation.y = facing * (0.18 + attentionYaw) + spin;
   model.rotation.z = state === "curious" ? Math.sin(elapsed * 2.1) * 0.075 : tinyPulse;

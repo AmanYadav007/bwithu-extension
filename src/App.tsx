@@ -7,7 +7,7 @@ import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
 import type { BehaviorEvent } from "./behaviorController";
 import type { BrowserAction, BrainReply, ConversationTurn } from "./brainClient";
-import { getBrowserContext, openMicrophoneSettings, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
+import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { useBearStore } from "./bearStore";
 import { getActivePageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
@@ -71,14 +71,12 @@ function micPermissionLabel(status: MicPermissionStatus) {
   }
 }
 
-function micNeedsRecovery(status: MicPermissionStatus) {
-  return status === "denied" || status === "unsupported";
-}
-
-function currentPermissionOrigin() {
-  const runtimeId = (globalThis as { chrome?: { runtime?: { id?: string } } }).chrome?.runtime?.id;
-  if (runtimeId) return `chrome-extension://${runtimeId}`;
-  return window.location.origin;
+function callStateLabel(state: BearState, status: string, isRecording: boolean) {
+  if (isRecording || state === "listen") return "Listening...";
+  if (state === "think") return "Thinking...";
+  if (state === "talk" || status.toLowerCase().includes("answering")) return "Speaking...";
+  if (state === "searching" || status.toLowerCase().includes("search")) return "Searching...";
+  return "Ready";
 }
 
 interface AppProps {
@@ -93,6 +91,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [panelSettingsOpen, setPanelSettingsOpen] = useState(false);
+  const [callDraft, setCallDraft] = useState("");
   const [messages, setMessages] = useState<ConversationTurn[]>([]);
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
   const [status, setStatus] = useState("");
@@ -102,6 +101,22 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [activeDisplay, setActiveDisplay] = useState<BrainReply["display"] | null>(null);
   const [liveCaption, setLiveCaption] = useState("");
   const [assistantCaption, setAssistantCaption] = useState("");
+
+  const [viewport, setViewport] = useState({
+    width: typeof window !== "undefined" ? window.innerWidth : 320,
+    height: typeof window !== "undefined" ? window.innerHeight : 600,
+  });
+
+  useEffect(() => {
+    function handleResize() {
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const introFinishedRef = useRef(false);
@@ -181,46 +196,42 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   }, []);
 
   const requestMicrophoneAccess = useCallback(async () => {
-    if (micPermissionStatus === "denied") {
-      const origin = currentPermissionOrigin();
-      const fallbackMessage = `Open chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)} and set Microphone to Allow.`;
-      try {
-        const message = await openMicrophoneSettings(origin);
-        setStatus(message);
-        setSpeechText("I opened Chrome settings. Set Microphone to Allow, then come back and try again.");
-      } catch {
-        setStatus(fallbackMessage);
-        setSpeechText("Chrome has blocked the mic. Please set Microphone to Allow in Chrome settings.");
-      }
-      return false;
-    }
-
     if (!navigator.mediaDevices?.getUserMedia) {
       setMicPermissionStatus("unsupported");
-      const origin = currentPermissionOrigin();
-      setStatus(`This browser cannot provide microphone access here. Try the installed Chrome extension, or check chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)}.`);
-      setSpeechText("I can't reach a microphone from this browser page.");
+      console.log("Microphone failed");
+      setStatus("I need microphone permission to hear you.");
+      setSpeechText("I need microphone permission to hear you.");
       return false;
     }
 
     setMicPermissionStatus("requesting");
-    setStatus("Chrome is asking for microphone access...");
+    setStatus("Requesting microphone...");
+    console.log("Requesting microphone");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       stream.getTracks().forEach((track) => track.stop());
       setMicPermissionStatus("granted");
-      setStatus("Microphone is enabled.");
-      setSpeechText("Mic is on. I'm ready to listen.");
+      console.log("Microphone granted");
       return true;
-    } catch (error) {
-      const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
-      setMicPermissionStatus(denied ? "denied" : "prompt");
-      setStatus(denied ? "Microphone is blocked. Allow it from Chrome site settings, then try again." : "Could not start the microphone.");
-      setSpeechText(denied ? "Mic is blocked. Please allow microphone access in Chrome settings." : "I couldn't start the mic. Try again?");
+    } catch (err) {
+      console.log("Microphone failed:", err);
+      setMicPermissionStatus("denied");
+      setStatus("Setting up microphone permission...");
+      setSpeechText("I need microphone permission to hear you. Opening permission tab...");
+      
+      if (typeof chrome !== "undefined" && chrome.tabs) {
+        chrome.tabs.create({ url: chrome.runtime.getURL("permissions.html") });
+      }
       return false;
     }
-  }, [micPermissionStatus]);
+  }, []);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
@@ -342,7 +353,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       audioRef.current.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
       await audioRef.current.play();
     } catch {
-      setStatus("Bumi could not speak this time, but he heard you.");
+      setStatus("B could not speak this time, but he heard you.");
     }
   }, [settings]);
 
@@ -368,8 +379,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("wave");
   }, []);
 
+  useEffect(() => {
+    if (!showIntro || !speechText) return undefined;
+    const timer = window.setTimeout(handleIntroComplete, Math.min(5200, Math.max(2200, speechText.length * 38)));
+    return () => window.clearTimeout(timer);
+  }, [handleIntroComplete, showIntro, speechText]);
+
   const runCommandDiagnostics = useCallback(async () => {
-    const name = settings.companionName || "Bumi";
+    const name = settings.companionName || "B";
     console.log(`🛠️ Starting ${name} Command Diagnostics Test Suite...`);
     const tests = [
       { cmd: "What is this page about?", desc: "Test page context extraction" },
@@ -462,7 +479,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setMessages(nextHistory);
       setAssistantCaption("");
       setSpeechText(needsSearch ? "Let me look that up..." : "Thinking...");
-      setStatus(needsSearch ? `${companionName || "Bumi"} is checking the internet...` : `${companionName || "Bumi"} is thinking...`);
+      setStatus(needsSearch ? `${companionName || "B"} is checking the internet...` : `${companionName || "B"} is thinking...`);
       if (settings.soundEnabled) playThinkingTick();
       dispatchBehavior(needsSearch ? "searchStarted" : "messageStarted");
       setActiveDisplay(null); // Clear previous TV screen details
@@ -505,7 +522,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         }
 
         setPendingAction(reply.type === "browser_action" && reply.action && reply.requiresConfirmation ? reply.action : null);
-        setStatus(reply.requiresConfirmation ? "Bumi needs your confirmation." : "");
+        setStatus(reply.requiresConfirmation ? "B needs your confirmation." : "");
         dispatchBehavior(needsSearch ? "searchEnded" : "messageEnded");
         if (settings.soundEnabled) playHappyChirp();
 
@@ -622,7 +639,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         dispatchBehavior("voiceEnded");
 
         if (caption) {
-          setStatus("Bumi heard you.");
+          setStatus("B heard you.");
           setLiveCaption(caption);
           void handleSendMessageRef.current?.(caption);
           return;
@@ -631,12 +648,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setStatus("Catching your words...");
         void transcribeAudio(blob, settings)
           .then((text) => {
-            setStatus(text ? "Bumi heard you." : "Bumi did not catch that.");
+            setStatus(text ? "B heard you." : "B did not catch that.");
             setLiveCaption(text);
             if (text) void handleSendMessageRef.current?.(text);
           })
           .catch((error) => {
-            setStatus(error instanceof Error ? error.message : "Bumi could not transcribe that.");
+            setStatus(error instanceof Error ? error.message : "B could not transcribe that.");
             setSpeechText("I could not catch that. Try again?");
           });
       };
@@ -655,14 +672,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const startRecording = useCallback(async () => {
     if (isRecording) return;
+    const hasMicAccess = await requestMicrophoneAccess();
+    if (!hasMicAccess) return;
+
     if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
       setStatus("Add your API key in settings first.");
-      setSpeechText("I need an API key before I can talk.");
+      setSpeechText("I can hear you now. Add an API key so I can answer live.");
       return;
     }
-
-    const hasMicAccess = micPermissionStatus === "granted" || await requestMicrophoneAccess();
-    if (!hasMicAccess) return;
 
     setVoiceDialogueActive(true);
     setShowChatPanel(false);
@@ -712,11 +729,17 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setStatus(message);
       await startLegacyRecording();
     }
-  }, [dispatchBehavior, isRecording, micPermissionStatus, requestMicrophoneAccess, settings, startLegacyRecording]);
+  }, [dispatchBehavior, isRecording, requestMicrophoneAccess, settings, startLegacyRecording]);
+
+  const handleMicButtonClick = useCallback(() => {
+    console.log("Mic button clicked");
+    if (isRecording) stopRecording();
+    else void startRecording();
+  }, [isRecording, startRecording, stopRecording]);
 
   const handleConfirmAction = useCallback(async () => {
     if (!pendingAction) return;
-    setStatus("Bumi is doing it...");
+    setStatus("B is doing it...");
     if (settings.soundEnabled) playClickPop();
     try {
       const result = await runBrowserAction(pendingAction);
@@ -724,7 +747,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setSpeechText(result);
       if (pendingAction.kind === "hide_bear") onRequestHide?.();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Bumi could not complete that action.";
+      const message = error instanceof Error ? error.message : "B could not complete that action.";
       setStatus(message);
       setSpeechText(message);
     } finally {
@@ -748,10 +771,51 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     handleSendMessageRef.current = handleSendMessage;
   }, [startRecording, handleSendMessage]);
 
+  const latestUserMessage = liveCaption || [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  const latestAssistantMessage =
+    assistantCaption ||
+    speechText ||
+    [...messages].reverse().find((message) => message.role === "assistant")?.content ||
+    "";
+  const companionName = settings.companionName || "B";
+  const liveStateText = callStateLabel(bearState, status, isRecording);
+
+  const sendCallDraft = useCallback(() => {
+    const text = callDraft.trim();
+    if (!text) return;
+    setCallDraft("");
+    void handleSendMessage(text);
+  }, [callDraft, handleSendMessage]);
+
+  const sendCallCommand = useCallback((text: string) => {
+    setCallDraft("");
+    void handleSendMessage(text);
+  }, [handleSendMessage]);
+
+  const sendSearchCommand = useCallback(() => {
+    const query = callDraft.trim();
+    if (!query) {
+      setStatus("Type what you want B to search.");
+      setSpeechText("What should I search for?");
+      return;
+    }
+    setCallDraft("");
+    void handleSendMessage(`Search the web for ${query}`);
+  }, [callDraft, handleSendMessage]);
+
   return (
     <div className="bwithu-sidepanel-layout">
-      {/* Bear fills the top — fullscreen character area */}
-      <div className="bwithu-bear-area">
+      <header className="bwithu-call-header">
+        <div>
+          <span className="bwithu-call-header__eyebrow">BwithU</span>
+          <strong>{companionName} Call</strong>
+        </div>
+        <span className={`bwithu-call-header__status bwithu-call-header__status--${mood}`}>
+          {liveStateText}
+        </span>
+      </header>
+
+      <div className={`bwithu-bear-area bwithu-bear-area--mood-${mood}`}>
         {enabled && bearState !== "hidden" && (
           <Bear
             key="b"
@@ -768,10 +832,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             onCancelAction={() => setPendingAction(null)}
             onSelectTab={handleSelectTab}
             isRecording={isRecording}
-            onToggleRecording={() => {
-              if (isRecording) stopRecording();
-              else void startRecording();
-            }}
+            onToggleRecording={handleMicButtonClick}
             immediateSpeech={isRecording || voiceDialogueActive}
             onSpawnComplete={handleSpawnComplete}
             onIntroComplete={handleIntroComplete}
@@ -781,26 +842,25 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             onDragReaction={() => dispatchBehavior("dragged")}
             onHoverReaction={() => dispatchBehavior("hovered")}
             isSidePanel={true}
+            sidePanelWidth={viewport.width}
+            sidePanelHeight={viewport.height}
           />
         )}
-        {/* Live caption overlay during voice call */}
-        {voiceDialogueActive && (liveCaption || assistantCaption) && (
-          <div className="bwithu-caption-area">
-            {liveCaption && <p className="bwithu-caption bwithu-caption--user">{liveCaption}</p>}
-            {assistantCaption && <p className="bwithu-caption bwithu-caption--ai">{assistantCaption}</p>}
-          </div>
-        )}
+        <div className="bwithu-live-state">{liveStateText}</div>
       </div>
 
-      {settings.onboardingCompleted && micNeedsRecovery(micPermissionStatus) && (
-        <div className="bwithu-mic-recovery">
-          <div>
-            <strong>{micPermissionLabel(micPermissionStatus)}</strong>
-            <span>Allow microphone access, then try again.</span>
-          </div>
-          <button type="button" onClick={requestMicrophoneAccess}>
-            Turn on mic
-          </button>
+      {(latestUserMessage || latestAssistantMessage) && (
+        <div className="bwithu-conversation-strip" aria-live="polite">
+          {latestUserMessage && (
+            <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
+              {latestUserMessage}
+            </div>
+          )}
+          {latestAssistantMessage && (
+            <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
+              {latestAssistantMessage}
+            </div>
+          )}
         </div>
       )}
 
@@ -844,39 +904,35 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         />
       )}
 
-      {/* Bottom control bar — always visible once onboarded */}
       {settings.onboardingCompleted ? (
-        <div className="bwithu-bottom-bar">
+        <form
+          className="bwithu-call-controls"
+          onSubmit={(event) => {
+            event.preventDefault();
+            sendCallDraft();
+          }}
+        >
           <button
             type="button"
-            className={`bwithu-side-btn${showChatPanel && !panelSettingsOpen ? " bwithu-side-btn--active" : ""}`}
-            onClick={() => {
-              setPanelSettingsOpen(false);
-              setShowChatPanel((open) => !open);
-            }}
-            title="Chat"
-          >
-            💬
-          </button>
-          <button
-            type="button"
-            className={`bwithu-mic-main${isRecording ? " bwithu-mic-main--active" : ""}`}
-            onClick={() => { if (isRecording) stopRecording(); else void startRecording(); }}
-            title={isRecording ? "Stop listening" : "Talk to companion"}
+            className={`bwithu-call-control bwithu-call-control--mic${isRecording ? " bwithu-call-control--active" : ""}`}
+            onClick={handleMicButtonClick}
+            title={isRecording ? "Stop listening" : "Talk to B"}
           >
             🎙️
           </button>
-          <button
-            type="button"
-            className={`bwithu-side-btn${showChatPanel && panelSettingsOpen ? " bwithu-side-btn--active" : ""}`}
-            onClick={openSettingsPanel}
-            title="Settings"
-          >
-            ⚙️
-          </button>
-        </div>
+          <input
+            value={callDraft}
+            onChange={(event) => setCallDraft(event.target.value)}
+            placeholder={`Message ${companionName}`}
+            aria-label={`Message ${companionName}`}
+          />
+          <button type="submit" className="bwithu-call-control" title="Send message">➤</button>
+          <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("Read this page")} title="Read page">📄</button>
+          <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("What tabs are open?")} title="Tabs">▦</button>
+          <button type="button" className="bwithu-call-control" onClick={sendSearchCommand} title="Search">⌕</button>
+          <button type="button" className="bwithu-call-control bwithu-call-control--quiet" onClick={openSettingsPanel} title="Settings">⚙️</button>
+        </form>
       ) : (
-        /* During onboarding, just show the chat panel trigger */
         !showChatPanel && (
           <div className="bwithu-bottom-bar bwithu-bottom-bar--onboarding">
             <button

@@ -45,6 +45,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
+        permissions: resolve(__dirname, 'permissions.html'),
         content: resolve(__dirname, 'src/content.tsx'),
         background: resolve(__dirname, 'src/background.ts'),
       },

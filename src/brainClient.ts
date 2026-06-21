@@ -110,10 +110,3 @@ export async function getBrowserContext(currentPageContext: string): Promise<str
     currentPageContext,
   });
 }
-
-export async function openMicrophoneSettings(origin: string): Promise<string> {
-  return sendRuntimeMessage<string>({
-    type: "BWITHU_OPEN_MICROPHONE_SETTINGS",
-    origin,
-  });
-}

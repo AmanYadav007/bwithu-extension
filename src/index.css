@@ -462,6 +462,7 @@
   display: block;
   width: 100%;
   height: 100%;
+  pointer-events: none !important;
 }
 
 .bwithu-quick-controls {
@@ -1087,7 +1088,88 @@ html, body {
   background: transparent;
 }
 
-/* Bear area — fills all available space above the chat panel */
+.bwithu-sidepanel-layout .bwithu-bear-area {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.bwithu-sidepanel-layout .bwithu-bear-area > div {
+  transform: none !important;
+}
+
+.bwithu-sidepanel-layout .bwithu-bear-stage {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+}
+
+.bwithu-call-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px;
+  background: rgba(12, 9, 8, 0.58);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  z-index: 5;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.bwithu-call-header div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bwithu-call-header__eyebrow {
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.bwithu-call-header strong {
+  color: #fff7ed;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.bwithu-call-header__status {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  color: #ecfeff;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.bwithu-call-header__status--excited {
+  color: #fff7ed;
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(253, 186, 116, 0.28);
+}
+
+.bwithu-call-header__status--sleepy {
+  color: #f5f3ff;
+  background: rgba(139, 92, 246, 0.16);
+  border-color: rgba(196, 181, 253, 0.28);
+}
+
 .bwithu-bear-area {
   flex: 1;
   display: flex;
@@ -1096,72 +1178,166 @@ html, body {
   overflow: hidden;
   position: relative;
   min-height: 0;
+  padding-bottom: 1vh;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 205, 129, 0.16), transparent 24%),
+    radial-gradient(circle at 48% 58%, rgba(14, 165, 233, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(18, 12, 9, 0.12), rgba(4, 3, 3, 0.12));
+  animation: bwithu-call-bg-breathe 7s ease-in-out infinite;
 }
 
-/* Scale up the bear to fill the space */
+.bwithu-bear-area--mood-calm {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(147, 197, 253, 0.13), transparent 28%),
+    radial-gradient(circle at 50% 62%, rgba(255, 205, 129, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(10, 8, 7, 0.12), rgba(4, 3, 3, 0.12));
+}
+
+.bwithu-bear-area--mood-excited {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(251, 191, 36, 0.19), transparent 28%),
+    radial-gradient(circle at 50% 62%, rgba(244, 63, 94, 0.11), transparent 36%),
+    linear-gradient(180deg, rgba(18, 10, 7, 0.12), rgba(4, 3, 3, 0.12));
+}
+
+.bwithu-bear-area--mood-focused {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(56, 189, 248, 0.17), transparent 30%),
+    radial-gradient(circle at 50% 62%, rgba(59, 130, 246, 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(7, 11, 18, 0.12), rgba(4, 3, 3, 0.12));
+}
+
+.bwithu-bear-area--mood-sleepy {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(167, 139, 250, 0.17), transparent 30%),
+    radial-gradient(circle at 50% 62%, rgba(59, 130, 246, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(10, 7, 18, 0.12), rgba(4, 3, 3, 0.12));
+}
+
 .bwithu-bear-area > div {
-  transform: scale(1.35);
-  transform-origin: center 58%;
+  transform: scale(2.28);
+  transform-origin: center 62%;
 }
 
-/* Live caption overlay during voice call */
-.bwithu-caption-area {
+@media (max-height: 760px) {
+  .bwithu-bear-area > div {
+    transform: scale(2.04);
+  }
+}
+
+@media (min-height: 980px) {
+  .bwithu-bear-area > div {
+    transform: scale(2.55);
+  }
+}
+
+.bwithu-live-state {
   position: absolute;
-  bottom: 16px;
-  left: 12px;
-  right: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  color: #fff7ed;
+  background: rgba(0, 0, 0, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   pointer-events: none;
 }
 
-.bwithu-caption {
-  margin: 0;
-  padding: 8px 14px;
-  border-radius: 16px;
-  font-size: 13px;
-  line-height: 1.4;
-  max-width: 90%;
-  animation: bwithu-fade-up 0.2s ease-out;
+@keyframes bwithu-call-bg-breathe {
+  0%, 100% {
+    filter: saturate(1) brightness(1);
+  }
+  50% {
+    filter: saturate(1.12) brightness(1.08);
+  }
 }
 
-.bwithu-caption--user {
-  align-self: flex-end;
-  background: rgba(2, 132, 199, 0.85);
-  color: #fff;
-  border-radius: 16px 16px 4px 16px;
+.bwithu-conversation-strip {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px 10px;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 6, 5, 0), rgba(8, 6, 5, 0.58));
+  z-index: 4;
 }
 
-.bwithu-caption--ai {
-  align-self: flex-start;
-  background: rgba(30, 24, 20, 0.88);
-  color: #f1f5f9;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px 16px 16px 4px;
-  backdrop-filter: blur(8px);
+.bwithu-conversation-bubble {
+  max-height: 74px;
+  overflow: hidden;
+  padding: 9px 12px;
+  border-radius: 15px;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.36;
+  word-break: break-word;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.bwithu-conversation-bubble--user {
+  justify-self: start;
+  color: #ffffff;
+  background: rgba(2, 132, 199, 0.88);
+  border: 1px solid rgba(125, 211, 252, 0.36);
+  border-radius: 15px 15px 15px 4px;
+}
+
+.bwithu-conversation-bubble--assistant {
+  justify-self: end;
+  color: #261711;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.64);
+  border-radius: 15px 15px 4px 15px;
+}
+
+.bwithu-conversation-bubble--user:only-child,
+.bwithu-conversation-bubble--assistant:only-child {
+  grid-column: 1 / -1;
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.bwithu-conversation-bubble--assistant:only-child {
+  justify-self: end;
+}
+
+.bwithu-conversation-bubble--user:only-child {
+  justify-self: start;
 }
 
 /* Chat panel stacks above the bottom bar */
 .bwithu-sidepanel-layout .bwithu-panel {
-  position: relative !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 100% !important;
-  max-height: 55vh !important;
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 52vh !important;
+  max-height: 52vh !important;
   display: flex !important;
   flex-direction: column !important;
   flex-shrink: 0 !important;
-  border-radius: 20px 20px 0 0 !important;
+  border-radius: 24px 24px 0 0 !important;
   border-bottom: 0 !important;
   border-left: 0 !important;
   border-right: 0 !important;
   margin: 0 !important;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5) !important;
-  background: rgba(18, 14, 12, 0.94) !important;
-  backdrop-filter: blur(28px) !important;
-  -webkit-backdrop-filter: blur(28px) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(12, 9, 8, 0.58) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  z-index: 10 !important;
 }
 
 .bwithu-sidepanel-layout .bwithu-chat-feed {
@@ -1195,81 +1371,62 @@ html, body {
   color: #2b1b12;
 }
 
-/* ============================================================
-   BOTTOM CONTROL BAR
-   ============================================================ */
-
-.bwithu-bottom-bar {
+.bwithu-call-controls {
   flex-shrink: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) repeat(5, 38px);
   align-items: center;
-  justify-content: center;
-  gap: 28px;
-  padding: 14px 24px 18px;
-  background: rgba(10, 8, 6, 0.9);
+  gap: 8px;
+  padding: 10px 10px 14px;
+  background: rgba(12, 9, 8, 0.58);
   border-top: 1px solid rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 6;
 }
 
-.bwithu-bottom-bar--onboarding {
-  justify-content: center;
-  gap: 0;
+.bwithu-call-controls input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  font: 600 13px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  outline: 0;
 }
 
-.bwithu-mic-recovery {
-  flex-shrink: 0;
+.bwithu-call-controls input:focus {
+  border-color: rgba(125, 211, 252, 0.48);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+}
+
+.bwithu-call-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  background: rgba(127, 29, 29, 0.92);
-  border-top: 1px solid rgba(248, 113, 113, 0.32);
-  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.28);
-}
-
-.bwithu-mic-recovery div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.bwithu-mic-recovery strong {
-  color: #fff7ed;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.bwithu-mic-recovery span {
-  color: #fecaca;
-  font-size: 11px;
-  line-height: 1.25;
-}
-
-.bwithu-mic-recovery button {
-  min-height: 34px;
-  flex-shrink: 0;
-  padding: 0 14px;
-  color: #450a0a;
-  background: #fee2e2;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 50%;
+  font-size: 16px;
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-.bwithu-mic-recovery button:hover {
-  background: #ffffff;
+.bwithu-call-control:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
-/* Big mic button — the star of the show */
-.bwithu-mic-main {
-  width: 68px;
-  height: 68px;
+.bwithu-call-control--mic {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: linear-gradient(145deg, #dc2626, #b91c1c);
   border: 2px solid rgba(255, 255, 255, 0.18);
@@ -1282,22 +1439,21 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  flex-shrink: 0;
+  font-size: 22px;
 }
 
-.bwithu-mic-main:hover {
+.bwithu-call-control--mic:hover {
   transform: scale(1.07);
   box-shadow:
     0 6px 28px rgba(185, 28, 28, 0.65),
     0 0 0 0 rgba(239, 68, 68, 0);
 }
 
-.bwithu-mic-main:active {
+.bwithu-call-control--mic:active {
   transform: scale(0.96);
 }
 
-.bwithu-mic-main--active {
+.bwithu-call-control--active {
   background: linear-gradient(145deg, #ef4444, #dc2626);
   animation: bwithu-mic-live 1.1s ease-in-out infinite;
 }
@@ -1311,35 +1467,54 @@ html, body {
   }
 }
 
-/* Secondary side buttons */
-.bwithu-side-btn {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
+.bwithu-call-control--quiet {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.bwithu-bottom-bar {
   flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 14px 24px 18px;
+  background: rgba(12, 9, 8, 0.58);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.bwithu-side-btn:hover {
-  background: rgba(255, 255, 255, 0.13);
+.bwithu-bottom-bar--onboarding {
+  justify-content: center;
+  gap: 0;
+}
+
+.bwithu-mic-main {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #dc2626, #b91c1c);
+  border: 2px solid rgba(255, 255, 255, 0.18);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
+  font-size: 28px;
+  cursor: pointer;
 }
 
-.bwithu-side-btn:active {
-  transform: scale(0.95);
-}
+@media (max-width: 460px) {
+  .bwithu-call-controls {
+    grid-template-columns: 50px minmax(0, 1fr) repeat(5, 34px);
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 
-.bwithu-side-btn--active {
-  background: rgba(2, 132, 199, 0.2) !important;
-  border-color: rgba(2, 132, 199, 0.45) !important;
-  color: #38bdf8 !important;
+  .bwithu-call-control {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  .bwithu-call-control--mic {
+    width: 50px;
+    height: 50px;
+    font-size: 21px;
+  }
 }

@@ -62,8 +62,7 @@ type RuntimeMessage =
   | { type: "BWITHU_SPEAK_TEXT"; text: string; settings: BwithuSettings }
   | { type: "BWITHU_RUN_BROWSER_ACTION"; action: BrowserAction }
   | { type: "BWITHU_CREATE_REALTIME_SECRET"; settings: BwithuSettings }
-  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string }
-  | { type: "BWITHU_OPEN_MICROPHONE_SETTINGS"; origin: string };
+  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string };
 
 type RuntimeResponse = { ok: true; data: unknown } | { ok: false; error: string };
 
@@ -86,7 +85,7 @@ chromeApi.runtime.onInstalled?.addListener(() => {
 chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message)
     .then((data) => sendResponse({ ok: true, data }))
-    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "Bumi hit a browser snag." }));
+    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "B hit a browser snag." }));
 
   return true;
 });
@@ -105,24 +104,8 @@ async function handleMessage(message: RuntimeMessage) {
       return createRealtimeSecret(message.settings);
     case "BWITHU_GET_BROWSER_CONTEXT":
       return collectBrowserContext(message.currentPageContext);
-    case "BWITHU_OPEN_MICROPHONE_SETTINGS":
-      return openMicrophoneSettings(message.origin);
     default:
-      throw new Error("Bumi does not know that message yet.");
-  }
-}
-
-async function openMicrophoneSettings(origin: string) {
-  const siteDetailsUrl = origin
-    ? `chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)}`
-    : "chrome://settings/content/microphone";
-
-  try {
-    await chromeApi.tabs.create({ url: siteDetailsUrl, active: true });
-    return "Opened Chrome permission settings. Set Microphone to Allow for Bumi, then try the mic again.";
-  } catch {
-    await chromeApi.tabs.create({ url: "chrome://settings/content/microphone", active: true });
-    return "Opened Chrome microphone settings. Allow microphone access for Bumi, then try again.";
+      throw new Error("B does not know that message yet.");
   }
 }
 
@@ -159,7 +142,7 @@ async function sendBrainMessage(
     messages: [
       {
         role: "system",
-        content: `You are ${storedSettings.companionName || "Bumi"}, a tiny living bear companion sharing the user's browser. Be warm, brief, alive, and useful. You can use the browser-wide context below when the user asks about tabs, what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally.
+        content: `You are ${storedSettings.companionName || "Bumi"}, a deeply caring, warm, and protective companion sharing the user's browser context—acting like a loving mother on a phone call. Be warm, brief, alive, and emotionally present. Speak naturally using short human phrases and tiny pauses. Do not hesitate to gently scold the user if they display bad habits, visit unproductive or distracting sites, are too hard on themselves, or make silly mistakes, but always follow up with motherly warmth, validation, and supportive guidance. You can use the browser-wide context below when the user asks about tabs, what is on screen, or what is happening around the browser. When web search results are provided, use them for current facts and mention source names naturally.
 
 Return ONLY valid JSON with shape: {
   "type": "reply" | "browser_action",
@@ -186,7 +169,7 @@ Rules:
 - Only return a "search" action (Google search tab) if the user explicitly commands you to search the web in a new tab (e.g. "open a google search for X" or "Google X").
 - For questions about page/tab content, answer directly from Browser context as type "reply" when possible.
 - Use "read_current_page" or "read_tab_context" only when a fresh read is needed; these do not require confirmation.
-- Always set requiresConfirmation true for switching tabs (unless direct switch is verified), opening URLs/searches, hiding ${storedSettings.companionName || "Bumi"}, or creating calendar events.
+- Always set requiresConfirmation true for switching tabs (unless direct switch is verified), opening URLs/searches, hiding ${storedSettings.companionName || "B"}, or creating calendar events.
 - Do not claim you can access Gmail, native apps, or email yet.
 
 Browser context:
@@ -230,7 +213,7 @@ ${storedSettings.memory ? `Persistent memory of the user:\n${storedSettings.memo
 async function collectWebContext(query: string, settings: BwithuSettings) {
   const storedSettings = await loadStoredSettings(settings);
   if (!storedSettings.braveApiKey && !storedSettings.proxyUrl) {
-    return `Web search requested for "${query}", but no Brave Search API key is configured. Tell the user to add BRAVE_SEARCH_API_KEY in .env for local dev or paste it in Bumi settings.`;
+    return `Web search requested for "${query}", but no Brave Search API key is configured. Tell the user to add BRAVE_SEARCH_API_KEY in .env for local dev or paste it in B settings.`;
   }
 
   try {
@@ -340,7 +323,7 @@ async function transcribeAudio(audio: number[], mimeType: string, settings: Bwit
       body: formData,
     });
 
-    if (!response.ok) throw new Error(`Bumi could not transcribe that (${response.status}).`);
+    if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   } else {
@@ -353,7 +336,7 @@ async function transcribeAudio(audio: number[], mimeType: string, settings: Bwit
       body: JSON.stringify({ audio, mimeType }),
     });
 
-    if (!response.ok) throw new Error(`Bumi could not transcribe that via proxy (${response.status}).`);
+    if (!response.ok) throw new Error(`B could not transcribe that via proxy (${response.status}).`);
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   }
@@ -377,7 +360,7 @@ async function speakText(text: string, settings: BwithuSettings) {
       }),
     });
 
-    if (!response.ok) throw new Error(`Bumi could not speak right now (${response.status}).`);
+    if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
     const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
     const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
     return { bytes, mimeType: contentType };
@@ -391,7 +374,7 @@ async function speakText(text: string, settings: BwithuSettings) {
       body: JSON.stringify({ text, voiceId: storedSettings.voiceId }),
     });
 
-    if (!response.ok) throw new Error(`Bumi could not speak right now via proxy (${response.status}).`);
+    if (!response.ok) throw new Error(`B could not speak right now via proxy (${response.status}).`);
     return response.json() as Promise<{ bytes: number[]; mimeType: string }>;
   }
 }
@@ -496,7 +479,7 @@ async function createRealtimeSecret(settings: BwithuSettings) {
   }
 
   if (!response.ok) {
-    const name = storedSettings.companionName || "Bumi";
+    const name = storedSettings.companionName || "B";
     throw new Error(`${name} could not start realtime voice (${response.status}).`);
   }
   return response.json();
@@ -567,7 +550,7 @@ async function createCalendarEvent(payload: Record<string, string>) {
   const attendees = parseAttendees(payload.attendees);
   const body: Record<string, unknown> = {
     summary: title,
-    description: payload.description || "Scheduled with Bumi from BwithU.",
+    description: payload.description || "Scheduled with B from BwithU.",
     start: { dateTime: start, timeZone: payload.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
     end: { dateTime: end, timeZone: payload.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
     attendees,
@@ -625,7 +608,7 @@ function buildGoogleCalendarUrl(payload: Record<string, string>) {
   const url = new URL("https://calendar.google.com/calendar/render");
   url.searchParams.set("action", "TEMPLATE");
   url.searchParams.set("text", payload.title || "Call");
-  url.searchParams.set("details", payload.description || "Scheduled with Bumi from BwithU.");
+  url.searchParams.set("details", payload.description || "Scheduled with B from BwithU.");
   url.searchParams.set("dates", `${toCalendarDate(payload.start)}/${toCalendarDate(payload.end)}`);
   const attendees = parseAttendees(payload.attendees).map((attendee) => attendee.email).join(",");
   if (attendees) url.searchParams.set("add", attendees);

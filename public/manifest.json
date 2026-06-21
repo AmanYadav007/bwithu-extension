@@ -3,6 +3,7 @@
   "name": "BwithU",
   "version": "0.1",
   "permissions": ["storage", "tabs", "identity", "sidePanel"],
+  "optional_permissions": ["microphone"],
   "side_panel": {
     "default_path": "index.html"
   },
@@ -33,7 +34,7 @@
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.x.ai wss://api.x.ai https://api.openai.com wss://api.openai.com https://api.search.brave.com https://accounts.google.com https://www.googleapis.com https://bwithu-extension.vercel.app wss://bwithu-extension.vercel.app"
   },
   "action": {
-    "default_title": "Toggle Bumi",
+    "default_title": "Toggle B",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

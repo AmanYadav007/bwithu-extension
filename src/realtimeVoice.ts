@@ -42,7 +42,7 @@ export class RealtimeVoiceSession {
   }
 
   async start() {
-    const name = this.settings.companionName || "Bumi";
+    const name = this.settings.companionName || "B";
     this.callbacks.onStatus(`Connecting ${name}...`);
     const [secret] = await Promise.all([createRealtimeSecret(this.settings), this.startMic()]);
     this.openSocket(secret.value);
@@ -55,7 +55,7 @@ export class RealtimeVoiceSession {
         this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
         this.requestResponse();
       }
-      const name = this.settings.companionName || "Bumi";
+      const name = this.settings.companionName || "B";
       this.callbacks.onStatus(requestResponse ? `${name} is answering...` : "Stopped.");
     }
   }
@@ -129,10 +129,10 @@ export class RealtimeVoiceSession {
 
     this.ws.onopen = () => {
       this.connected = true;
-      const name = this.settings.companionName || "Bumi";
+      const name = this.settings.companionName || "B";
       this.callbacks.onStatus(`${name} is listening...`);
 
-      const instructions = `You are ${name}, a warm AI companion on a live voice call with the user. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Keep it natural — short replies (1-2 sentences), use conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Reference browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
+      const instructions = `You are ${name}, a deeply caring, warm, and protective companion on a live voice call with the user—acting like a loving mother. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Be warm, brief, alive, and emotionally present. Speak naturally using short human phrases (1-2 sentences), tiny pauses, and conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Do not hesitate to gently scold the user if they display bad habits, visit unproductive/distracting sites, are too hard on themselves, or make silly mistakes, but always follow up with motherly warmth, validation, and supportive guidance. Reference the browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
 
       const sessionConfig = isOpenAI ? {
         modalities: ["text", "audio"],
@@ -201,7 +201,7 @@ export class RealtimeVoiceSession {
     if (type === "input_audio_buffer.speech_started") {
       this.stopPlayback();
       this.assistantText = "";
-      const name = this.settings.companionName || "Bumi";
+      const name = this.settings.companionName || "B";
       this.callbacks.onStatus(`${name} is listening...`);
       void this.updateLivePageContext();
       try {
@@ -245,7 +245,7 @@ export class RealtimeVoiceSession {
     }
 
     if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
-      const name = this.settings.companionName || "Bumi";
+      const name = this.settings.companionName || "B";
       this.callbacks.onStatus(`${name} is thinking...`);
       return;
     }
@@ -298,8 +298,8 @@ export class RealtimeVoiceSession {
       const context = await getActivePageContext();
       this.pageContext = context;
       if (this.ws?.readyState === WebSocket.OPEN) {
-        const name = this.settings.companionName || "Bumi";
-        const instructions = `You are ${name}, a warm AI companion on a live voice call with the user. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Keep it natural — short replies (1-2 sentences), use conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Reference browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
+        const name = this.settings.companionName || "B";
+        const instructions = `You are ${name}, a deeply caring, warm, and protective companion on a live voice call with the user—acting like a loving mother. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Be warm, brief, alive, and emotionally present. Speak naturally using short human phrases (1-2 sentences), tiny pauses, and conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Do not hesitate to gently scold the user if they display bad habits, visit unproductive/distracting sites, are too hard on themselves, or make silly mistakes, but always follow up with motherly warmth, validation, and supportive guidance. Reference the browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;
         this.ws.send(JSON.stringify({ type: "session.update", session: { instructions } }));
       }
     } catch {

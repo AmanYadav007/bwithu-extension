@@ -67,7 +67,7 @@ export default function PixelPanel({
       className="bwithu-panel"
     >
       <div className="bwithu-panel__bar">
-        <span>{!settings.onboardingCompleted ? "Setup Companion" : (isRecording ? `${settings.companionName || "Bumi"} is listening` : (settings.companionName || "Bumi"))}</span>
+        <span>{!settings.onboardingCompleted ? "Setup Companion" : (isRecording ? `${settings.companionName || "B"} is listening` : (settings.companionName || "B"))}</span>
         <div>
           {settings.onboardingCompleted && (
             <button type="button" onClick={() => onSettingsOpenChange(!settingsOpen)} aria-label="settings">
@@ -128,7 +128,7 @@ export default function PixelPanel({
             {messages.length === 0 && !liveCaption && !assistantCaption && (
               <div className="bwithu-chat-empty">
                 <span>👋</span>
-                <p>Ask {settings.companionName || "Bumi"} anything, or use the mic to start talking live!</p>
+                <p>Ask {settings.companionName || "B"} anything, or use the mic to start talking live!</p>
               </div>
             )}
             {messages.map((message, index) => (
@@ -162,7 +162,7 @@ export default function PixelPanel({
 
           {pendingAction && (
             <section className="bwithu-confirm">
-              <p>{settings.companionName || "Bumi"} wants to: {describeAction(pendingAction, settings.companionName || "Bumi")}</p>
+              <p>{settings.companionName || "B"} wants to: {describeAction(pendingAction, settings.companionName || "B")}</p>
               <div>
                 <button type="button" onClick={onConfirmAction}>
                   Do it
@@ -178,8 +178,8 @@ export default function PixelPanel({
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={`Type to ${settings.companionName || "Bumi"}...`}
-              aria-label={`Message ${settings.companionName || "Bumi"}`}
+              placeholder={`Type to ${settings.companionName || "B"}...`}
+              aria-label={`Message ${settings.companionName || "B"}`}
             />
             <button type="submit">Send</button>
           </form>
@@ -193,7 +193,7 @@ export default function PixelPanel({
             <input
               value={settings.companionName || ""}
               onChange={(event) => onSettingsChange({ ...settings, companionName: event.target.value })}
-              placeholder="Bumi"
+              placeholder="B"
               type="text"
             />
           </label>

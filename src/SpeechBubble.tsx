@@ -6,9 +6,10 @@ interface SpeechBubbleProps {
   onComplete: () => void;
   hold?: boolean;
   immediate?: boolean;
+  isSidePanel?: boolean;
 }
 
-export default function SpeechBubble({ text, onComplete, hold = false, immediate = false }: SpeechBubbleProps) {
+export default function SpeechBubble({ text, onComplete, hold = false, immediate = false, isSidePanel = false }: SpeechBubbleProps) {
   const [internalDisplayedText, setInternalDisplayedText] = useState("");
 
   useEffect(() => {
@@ -45,15 +46,17 @@ export default function SpeechBubble({ text, onComplete, hold = false, immediate
       transition={{ duration: 0.2 }}
       style={{
         position: "absolute",
-        right: 14,
-        bottom: 212,
-        width: 196,
+        left: isSidePanel ? 16 : "auto",
+        right: 16,
+        bottom: isSidePanel ? 96 : 212,
+        width: isSidePanel ? "auto" : 196,
         maxWidth: "calc(100vw - 32px)",
-        border: "1px solid rgba(80, 55, 32, 0.12)",
-        borderRadius: 12,
-        background: "rgba(255, 255, 255, 0.96)",
-        boxShadow: "0 12px 32px rgba(37, 24, 15, 0.16)",
-        color: "#241914",
+        border: isSidePanel ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid rgba(80, 55, 32, 0.12)",
+        borderRadius: 14,
+        background: isSidePanel ? "rgba(15, 10, 8, 0.88)" : "rgba(255, 255, 255, 0.96)",
+        boxShadow: isSidePanel ? "0 10px 24px rgba(0, 0, 0, 0.35)" : "0 12px 32px rgba(37, 24, 15, 0.16)",
+        color: isSidePanel ? "#f8fafc" : "#241914",
+        backdropFilter: isSidePanel ? "blur(16px)" : "none",
         fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         fontSize: 13,
         lineHeight: 1.45,
@@ -70,19 +73,21 @@ export default function SpeechBubble({ text, onComplete, hold = false, immediate
       >
         |
       </motion.span>
-      <span
-        style={{
-          position: "absolute",
-          right: 34,
-          bottom: -7,
-          width: 14,
-          height: 14,
-          background: "rgba(255, 255, 255, 0.96)",
-          borderBottom: "1px solid rgba(80, 55, 32, 0.1)",
-          borderRight: "1px solid rgba(80, 55, 32, 0.1)",
-          transform: "rotate(45deg)",
-        }}
-      />
+      {!isSidePanel && (
+        <span
+          style={{
+            position: "absolute",
+            right: 34,
+            bottom: -7,
+            width: 14,
+            height: 14,
+            background: "rgba(255, 255, 255, 0.96)",
+            borderBottom: "1px solid rgba(80, 55, 32, 0.1)",
+            borderRight: "1px solid rgba(80, 55, 32, 0.1)",
+            transform: "rotate(45deg)",
+          }}
+        />
+      )}
     </motion.div>
   );
 }
