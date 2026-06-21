@@ -138,10 +138,10 @@ export default function Bear({
   controls,
   isSidePanel = false,
   sidePanelWidth = 320,
-  sidePanelHeight = 600,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
+  const panelSize = Math.min(420, Math.max(280, sidePanelWidth * 0.9));
   const [positionReady, setPositionReady] = useState(isSidePanel);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [glbUnavailable, setGlbUnavailable] = useState(false);
@@ -293,15 +293,14 @@ export default function Bear({
         position: isSidePanel ? "relative" : "fixed",
         left: isSidePanel ? "auto" : 0,
         top: isSidePanel ? "auto" : 0,
-        x: isSidePanel ? 0 : x,
-        y: isSidePanel ? 0 : y,
         margin: isSidePanel ? "0 auto" : undefined,
-        width: isSidePanel ? sidePanelWidth : SIZE,
-        height: isSidePanel ? sidePanelHeight : SIZE,
+        width: isSidePanel ? panelSize : SIZE,
+        height: isSidePanel ? panelSize : SIZE,
         cursor: isSidePanel ? "default" : "grab",
         pointerEvents: "auto",
         userSelect: "none",
         touchAction: "none",
+        ...(isSidePanel ? {} : { x, y }),
       }}
     >
       <motion.div
@@ -330,8 +329,8 @@ export default function Bear({
             className="bwithu-portal"
             style={{
               position: "absolute",
-              left: ((isSidePanel ? sidePanelWidth : SIZE) - 196) / 2,
-              top: ((isSidePanel ? sidePanelHeight : SIZE) - 196) / 2,
+              left: ((isSidePanel ? panelSize : SIZE) - 196) / 2,
+              top: ((isSidePanel ? panelSize : SIZE) - 196) / 2,
               right: "auto",
               bottom: "auto",
               zIndex: -1,
@@ -424,8 +423,8 @@ export default function Bear({
             state={animationState}
             mood={mood}
             facing={facing}
-            width={isSidePanel ? sidePanelWidth : SIZE}
-            height={isSidePanel ? sidePanelHeight : SIZE}
+            width={isSidePanel ? panelSize : SIZE}
+            height={isSidePanel ? panelSize : SIZE}
             onLoadError={() => setGlbUnavailable(true)}
           />
         ) : (

@@ -71,6 +71,34 @@ function micPermissionLabel(status: MicPermissionStatus) {
   }
 }
 
+function cleanLiveCaption(text: string): string {
+  if (!text) return "";
+  
+  let cleaned = text.trim();
+  
+  // Remove "You're talking" loops specifically
+  cleaned = cleaned.replace(/(You're talking[\s.,!?]*)+/gi, () => {
+    return "You're talking... ";
+  }).trim();
+  
+  // Collapse duplicate adjacent words
+  const words = cleaned.split(/\s+/);
+  const result: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (i === 0 || words[i].toLowerCase() !== words[i - 1].toLowerCase()) {
+      result.push(words[i]);
+    }
+  }
+  cleaned = result.join(" ");
+
+  // Trim to 140 characters
+  if (cleaned.length > 140) {
+    cleaned = cleaned.slice(0, 137) + "...";
+  }
+  
+  return cleaned.trim();
+}
+
 function callStateLabel(state: BearState, status: string, isRecording: boolean) {
   if (isRecording || state === "listen") return "Listening...";
   if (state === "think") return "Thinking...";
@@ -771,7 +799,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     handleSendMessageRef.current = handleSendMessage;
   }, [startRecording, handleSendMessage]);
 
-  const latestUserMessage = liveCaption || [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  const latestUserMessage = cleanLiveCaption(liveCaption || [...messages].reverse().find((message) => message.role === "user")?.content || "");
   const latestAssistantMessage =
     assistantCaption ||
     speechText ||
@@ -791,17 +819,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setCallDraft("");
     void handleSendMessage(text);
   }, [handleSendMessage]);
-
-  const sendSearchCommand = useCallback(() => {
-    const query = callDraft.trim();
-    if (!query) {
-      setStatus("Type what you want B to search.");
-      setSpeechText("What should I search for?");
-      return;
-    }
-    setCallDraft("");
-    void handleSendMessage(`Search the web for ${query}`);
-  }, [callDraft, handleSendMessage]);
 
   return (
     <div className="bwithu-sidepanel-layout">
@@ -846,23 +863,20 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             sidePanelHeight={viewport.height}
           />
         )}
-        <div className="bwithu-live-state">{liveStateText}</div>
+        {!showChatPanel && (latestAssistantMessage || latestUserMessage) && (
+          <div className="bwithu-conversation-strip" aria-live="polite">
+            {latestAssistantMessage ? (
+              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
+                {latestAssistantMessage}
+              </div>
+            ) : (
+              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
+                {latestUserMessage}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {!showChatPanel && (latestUserMessage || latestAssistantMessage) && (
-        <div className="bwithu-conversation-strip" aria-live="polite">
-          {latestUserMessage && (
-            <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
-              {latestUserMessage}
-            </div>
-          )}
-          {latestAssistantMessage && (
-            <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
-              {latestAssistantMessage}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Chat panel */}
       {showChatPanel && (
@@ -904,7 +918,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         />
       )}
 
-      {settings.onboardingCompleted ? (
+      {settings.onboardingCompleted && !showChatPanel ? (
         <form
           className="bwithu-call-controls"
           onSubmit={(event) => {
@@ -929,7 +943,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           <button type="submit" className="bwithu-call-control" title="Send message">➤</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("Read this page")} title="Read page">📄</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("What tabs are open?")} title="Tabs">▦</button>
-          <button type="button" className="bwithu-call-control" onClick={sendSearchCommand} title="Search">⌕</button>
           <button type="button" className="bwithu-call-control bwithu-call-control--quiet" onClick={openSettingsPanel} title="Settings">⚙️</button>
         </form>
       ) : (
