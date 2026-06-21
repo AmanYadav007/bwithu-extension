@@ -3,7 +3,6 @@
   "name": "BwithU",
   "version": "0.1",
   "permissions": ["storage", "tabs", "identity", "sidePanel"],
-  "optional_permissions": ["microphone"],
   "side_panel": {
     "default_path": "index.html"
   },

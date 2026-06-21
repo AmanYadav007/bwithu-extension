@@ -62,7 +62,8 @@ type RuntimeMessage =
   | { type: "BWITHU_SPEAK_TEXT"; text: string; settings: BwithuSettings }
   | { type: "BWITHU_RUN_BROWSER_ACTION"; action: BrowserAction }
   | { type: "BWITHU_CREATE_REALTIME_SECRET"; settings: BwithuSettings }
-  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string };
+  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string }
+  | { type: "BWITHU_OPEN_MICROPHONE_SETTINGS"; origin: string };
 
 type RuntimeResponse = { ok: true; data: unknown } | { ok: false; error: string };
 
@@ -104,8 +105,24 @@ async function handleMessage(message: RuntimeMessage) {
       return createRealtimeSecret(message.settings);
     case "BWITHU_GET_BROWSER_CONTEXT":
       return collectBrowserContext(message.currentPageContext);
+    case "BWITHU_OPEN_MICROPHONE_SETTINGS":
+      return openMicrophoneSettings(message.origin);
     default:
       throw new Error("Bumi does not know that message yet.");
+  }
+}
+
+async function openMicrophoneSettings(origin: string) {
+  const siteDetailsUrl = origin
+    ? `chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)}`
+    : "chrome://settings/content/microphone";
+
+  try {
+    await chromeApi.tabs.create({ url: siteDetailsUrl, active: true });
+    return "Opened Chrome permission settings. Set Microphone to Allow for Bumi, then try the mic again.";
+  } catch {
+    await chromeApi.tabs.create({ url: "chrome://settings/content/microphone", active: true });
+    return "Opened Chrome microphone settings. Allow microphone access for Bumi, then try again.";
   }
 }
 

@@ -9,6 +9,8 @@ interface PixelPanelProps {
   messages: ConversationTurn[];
   pendingAction: BrowserAction | null;
   status: string;
+  micPermissionStatus: string;
+  settingsOpen: boolean;
   isRecording: boolean;
   liveCaption: string;
   assistantCaption: string;
@@ -17,6 +19,8 @@ interface PixelPanelProps {
   onConfirmAction: () => void;
   onCancelAction: () => void;
   onResetPosition: () => void;
+  onRequestMicAccess: () => void;
+  onSettingsOpenChange: (open: boolean) => void;
   onClose: () => void;
 }
 
@@ -25,6 +29,8 @@ export default function PixelPanel({
   messages,
   pendingAction,
   status,
+  micPermissionStatus,
+  settingsOpen,
   isRecording,
   liveCaption,
   assistantCaption,
@@ -33,10 +39,11 @@ export default function PixelPanel({
   onConfirmAction,
   onCancelAction,
   onResetPosition,
+  onRequestMicAccess,
+  onSettingsOpenChange,
   onClose,
 }: PixelPanelProps) {
   const [draft, setDraft] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -63,7 +70,7 @@ export default function PixelPanel({
         <span>{!settings.onboardingCompleted ? "Setup Companion" : (isRecording ? `${settings.companionName || "Bumi"} is listening` : (settings.companionName || "Bumi"))}</span>
         <div>
           {settings.onboardingCompleted && (
-            <button type="button" onClick={() => setSettingsOpen((open) => !open)} aria-label="settings">
+            <button type="button" onClick={() => onSettingsOpenChange(!settingsOpen)} aria-label="settings">
               ⚙️
             </button>
           )}
@@ -277,6 +284,15 @@ export default function PixelPanel({
                 <option value="adventurous">adventurous</option>
               </select>
             </label>
+          </div>
+          <div className="bwithu-mic-access">
+            <div>
+              <span>Microphone</span>
+              <strong>{micPermissionStatus}</strong>
+            </div>
+            <button type="button" onClick={onRequestMicAccess}>
+              Turn on mic
+            </button>
           </div>
           <div className="bwithu-settings__toggles">
             <label className="bwithu-check">

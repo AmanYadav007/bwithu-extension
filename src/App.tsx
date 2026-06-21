@@ -7,7 +7,7 @@ import type { BearState } from "./animationStates";
 import { nextBehaviorState, stateDuration } from "./behaviorController";
 import type { BehaviorEvent } from "./behaviorController";
 import type { BrowserAction, BrainReply, ConversationTurn } from "./brainClient";
-import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
+import { getBrowserContext, openMicrophoneSettings, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { useBearStore } from "./bearStore";
 import { getActivePageContext } from "./pageContext";
 import { RealtimeVoiceSession } from "./realtimeVoice";
@@ -16,6 +16,7 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessage
 import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+type MicPermissionStatus = "unknown" | "prompt" | "requesting" | "granted" | "denied" | "unsupported";
 
 interface SpeechRecognitionLike {
   continuous: boolean;
@@ -52,6 +53,34 @@ function looksLikeWebIntent(text: string) {
   );
 }
 
+function micPermissionLabel(status: MicPermissionStatus) {
+  switch (status) {
+    case "granted":
+      return "Mic is on";
+    case "denied":
+      return "Mic is blocked";
+    case "requesting":
+      return "Asking for mic...";
+    case "unsupported":
+      return "Mic unavailable";
+    case "prompt":
+      return "Mic needs permission";
+    case "unknown":
+    default:
+      return "Mic not checked";
+  }
+}
+
+function micNeedsRecovery(status: MicPermissionStatus) {
+  return status === "denied" || status === "unsupported";
+}
+
+function currentPermissionOrigin() {
+  const runtimeId = (globalThis as { chrome?: { runtime?: { id?: string } } }).chrome?.runtime?.id;
+  if (runtimeId) return `chrome-extension://${runtimeId}`;
+  return window.location.origin;
+}
+
 interface AppProps {
   enabled?: boolean;
   onRequestHide?: () => void;
@@ -63,11 +92,13 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [speechText, setSpeechText] = useState("");
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [panelSettingsOpen, setPanelSettingsOpen] = useState(false);
   const [messages, setMessages] = useState<ConversationTurn[]>([]);
   const [pendingAction, setPendingAction] = useState<BrowserAction | null>(null);
-  const [, setStatus] = useState("");
+  const [status, setStatus] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [voiceDialogueActive, setVoiceDialogueActive] = useState(false);
+  const [micPermissionStatus, setMicPermissionStatus] = useState<MicPermissionStatus>("unknown");
   const [activeDisplay, setActiveDisplay] = useState<BrainReply["display"] | null>(null);
   const [liveCaption, setLiveCaption] = useState("");
   const [assistantCaption, setAssistantCaption] = useState("");
@@ -119,6 +150,77 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   useEffect(() => {
     void saveMessages(messages);
   }, [messages]);
+
+  const refreshMicPermission = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicPermissionStatus("unsupported");
+      return "unsupported" as MicPermissionStatus;
+    }
+
+    try {
+      const permission = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+      const next = permission?.state === "granted" ? "granted" : permission?.state === "denied" ? "denied" : "prompt";
+      setMicPermissionStatus(next);
+      permission.onchange = () => {
+        void refreshMicPermission();
+      };
+      return next;
+    } catch {
+      setMicPermissionStatus("prompt");
+      return "prompt" as MicPermissionStatus;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshMicPermission();
+  }, [refreshMicPermission]);
+
+  const openSettingsPanel = useCallback(() => {
+    setShowChatPanel(true);
+    setPanelSettingsOpen(true);
+  }, []);
+
+  const requestMicrophoneAccess = useCallback(async () => {
+    if (micPermissionStatus === "denied") {
+      const origin = currentPermissionOrigin();
+      const fallbackMessage = `Open chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)} and set Microphone to Allow.`;
+      try {
+        const message = await openMicrophoneSettings(origin);
+        setStatus(message);
+        setSpeechText("I opened Chrome settings. Set Microphone to Allow, then come back and try again.");
+      } catch {
+        setStatus(fallbackMessage);
+        setSpeechText("Chrome has blocked the mic. Please set Microphone to Allow in Chrome settings.");
+      }
+      return false;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicPermissionStatus("unsupported");
+      const origin = currentPermissionOrigin();
+      setStatus(`This browser cannot provide microphone access here. Try the installed Chrome extension, or check chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)}.`);
+      setSpeechText("I can't reach a microphone from this browser page.");
+      return false;
+    }
+
+    setMicPermissionStatus("requesting");
+    setStatus("Chrome is asking for microphone access...");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicPermissionStatus("granted");
+      setStatus("Microphone is enabled.");
+      setSpeechText("Mic is on. I'm ready to listen.");
+      return true;
+    } catch (error) {
+      const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
+      setMicPermissionStatus(denied ? "denied" : "prompt");
+      setStatus(denied ? "Microphone is blocked. Allow it from Chrome site settings, then try again." : "Could not start the microphone.");
+      setSpeechText(denied ? "Mic is blocked. Please allow microphone access in Chrome settings." : "I couldn't start the mic. Try again?");
+      return false;
+    }
+  }, [micPermissionStatus]);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
@@ -559,20 +661,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       return;
     }
 
-    // Request mic permission directly in the click handler (must stay close to the user gesture).
-    const chromeExt = (window as unknown as { chrome?: { permissions?: { request: (p: { permissions: string[] }) => Promise<boolean> } } }).chrome;
-    if (chromeExt?.permissions?.request) {
-      try {
-        const granted = await chromeExt.permissions.request({ permissions: ["microphone"] });
-        if (!granted) {
-          setSpeechText("I need microphone access to hear you. Please allow it when Chrome asks.");
-          setStatus("Microphone permission denied.");
-          return;
-        }
-      } catch {
-        // permissions.request not available in this context — proceed and let getUserMedia handle it
-      }
-    }
+    const hasMicAccess = micPermissionStatus === "granted" || await requestMicrophoneAccess();
+    if (!hasMicAccess) return;
 
     setVoiceDialogueActive(true);
     setShowChatPanel(false);
@@ -622,7 +712,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setStatus(message);
       await startLegacyRecording();
     }
-  }, [dispatchBehavior, isRecording, settings, startLegacyRecording]);
+  }, [dispatchBehavior, isRecording, micPermissionStatus, requestMicrophoneAccess, settings, startLegacyRecording]);
 
   const handleConfirmAction = useCallback(async () => {
     if (!pendingAction) return;
@@ -702,6 +792,18 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         )}
       </div>
 
+      {settings.onboardingCompleted && micNeedsRecovery(micPermissionStatus) && (
+        <div className="bwithu-mic-recovery">
+          <div>
+            <strong>{micPermissionLabel(micPermissionStatus)}</strong>
+            <span>Allow microphone access, then try again.</span>
+          </div>
+          <button type="button" onClick={requestMicrophoneAccess}>
+            Turn on mic
+          </button>
+        </div>
+      )}
+
       {/* Chat panel */}
       {showChatPanel && (
         <PixelPanel
@@ -709,6 +811,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           messages={messages}
           pendingAction={pendingAction}
           status={status}
+          micPermissionStatus={micPermissionLabel(micPermissionStatus)}
+          settingsOpen={panelSettingsOpen}
           isRecording={isRecording}
           liveCaption={liveCaption}
           assistantCaption={assistantCaption}
@@ -731,7 +835,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             await resetBearPosition();
             setStatus("Position reset!");
           }}
-          onClose={() => setShowChatPanel(false)}
+          onRequestMicAccess={requestMicrophoneAccess}
+          onSettingsOpenChange={setPanelSettingsOpen}
+          onClose={() => {
+            setShowChatPanel(false);
+            setPanelSettingsOpen(false);
+          }}
         />
       )}
 
@@ -740,8 +849,11 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         <div className="bwithu-bottom-bar">
           <button
             type="button"
-            className={`bwithu-side-btn${showChatPanel ? " bwithu-side-btn--active" : ""}`}
-            onClick={() => setShowChatPanel((open) => !open)}
+            className={`bwithu-side-btn${showChatPanel && !panelSettingsOpen ? " bwithu-side-btn--active" : ""}`}
+            onClick={() => {
+              setPanelSettingsOpen(false);
+              setShowChatPanel((open) => !open);
+            }}
             title="Chat"
           >
             💬
@@ -756,8 +868,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           </button>
           <button
             type="button"
-            className="bwithu-side-btn"
-            onClick={() => setShowChatPanel(true)}
+            className={`bwithu-side-btn${showChatPanel && panelSettingsOpen ? " bwithu-side-btn--active" : ""}`}
+            onClick={openSettingsPanel}
             title="Settings"
           >
             ⚙️

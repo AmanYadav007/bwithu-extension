@@ -341,6 +341,46 @@
   margin-top: 6px;
 }
 
+.bwithu-mic-access {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 10px;
+}
+
+.bwithu-mic-access div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bwithu-mic-access span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.bwithu-mic-access strong {
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bwithu-mic-access button {
+  flex-shrink: 0;
+  padding: 0 12px;
+  background: rgba(14, 165, 233, 0.18);
+  border-color: rgba(14, 165, 233, 0.42);
+  color: #7dd3fc;
+}
+
 .bwithu-check {
   display: flex !important;
   flex-direction: row !important;
@@ -1177,6 +1217,55 @@ html, body {
   gap: 0;
 }
 
+.bwithu-mic-recovery {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(127, 29, 29, 0.92);
+  border-top: 1px solid rgba(248, 113, 113, 0.32);
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.bwithu-mic-recovery div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bwithu-mic-recovery strong {
+  color: #fff7ed;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.bwithu-mic-recovery span {
+  color: #fecaca;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.bwithu-mic-recovery button {
+  min-height: 34px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  color: #450a0a;
+  background: #fee2e2;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.bwithu-mic-recovery button:hover {
+  background: #ffffff;
+}
+
 /* Big mic button — the star of the show */
 .bwithu-mic-main {
   width: 68px;
@@ -1254,5 +1343,3 @@ html, body {
   border-color: rgba(2, 132, 199, 0.45) !important;
   color: #38bdf8 !important;
 }
-
-
