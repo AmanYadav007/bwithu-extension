@@ -1,44 +1,9 @@
+import type { BearPosition, BwithuSettings, ConversationTurn } from "./types";
+import { DEFAULT_SETTINGS } from "./types";
+
 const SETTINGS_KEY = "bwithu.settings";
 const POSITION_KEY = "bwithu.bearPosition";
-
-export interface BearPosition {
-  x: number;
-  y: number;
-}
-
-export interface BwithuSettings {
-  apiKey: string;
-  openAiKey: string;
-  braveApiKey: string;
-  googleClientId: string;
-  characterRenderer: "glb" | "sprite";
-  characterModelUrl: string;
-  voiceId: string;
-  soundEnabled: boolean;
-  voiceEnabled: boolean;
-  wanderIntensity: "calm" | "curious" | "adventurous";
-  proxyUrl?: string;
-  companionName?: string;
-  memory?: string;
-  onboardingCompleted: boolean;
-}
-
-export const DEFAULT_SETTINGS: BwithuSettings = {
-  apiKey: "",
-  openAiKey: "",
-  braveApiKey: "",
-  googleClientId: "",
-  characterRenderer: "glb",
-  characterModelUrl: "",
-  voiceId: "coral",
-  soundEnabled: true,
-  voiceEnabled: true,
-  wanderIntensity: "adventurous",
-  proxyUrl: "",
-  companionName: "",
-  memory: "",
-  onboardingCompleted: false,
-};
+const MESSAGES_KEY = "bwithu.messages";
 
 interface ChromeLike {
   storage?: {
@@ -166,13 +131,6 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
     return {};
   }
 }
-
-export interface ConversationTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-const MESSAGES_KEY = "bwithu.messages";
 
 export async function loadMessages(): Promise<ConversationTurn[]> {
   return (await getStored<ConversationTurn[]>(MESSAGES_KEY)) || [];

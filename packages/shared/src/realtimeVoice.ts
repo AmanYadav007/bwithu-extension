@@ -1,6 +1,5 @@
-import { createRealtimeSecret } from "./brainClient";
-import type { BwithuSettings } from "./storage";
-import { getActivePageContext } from "./pageContext";
+import { createRealtimeSecret } from "./voice";
+import type { BwithuSettings } from "./types";
 
 const SAMPLE_RATE = 24000;
 const GROK_MODEL = "grok-voice-think-fast-1.0";
@@ -16,6 +15,7 @@ interface RealtimeVoiceCallbacks {
 export class RealtimeVoiceSession {
   private readonly settings: BwithuSettings;
   private readonly callbacks: RealtimeVoiceCallbacks;
+  private readonly pageContextGetter: () => Promise<string>;
   private captureContext: AudioContext | null = null;
   private playbackContext: AudioContext | null = null;
   private nativeSampleRate = 44100;
@@ -32,21 +32,22 @@ export class RealtimeVoiceSession {
   private responseActive = false;
   private responseRequested = false;
   private turnFinalizeTimer: ReturnType<typeof setTimeout> | null = null;
-  private pageContext: string;
+  private pageContext = "";
 
   constructor(
     settings: BwithuSettings,
     callbacks: RealtimeVoiceCallbacks,
-    pageContext: string,
+    pageContextGetter: () => Promise<string>,
   ) {
     this.settings = settings;
     this.callbacks = callbacks;
-    this.pageContext = pageContext;
+    this.pageContextGetter = pageContextGetter;
   }
 
   async start() {
     const name = this.settings.companionName || "B";
     this.callbacks.onStatus(`Connecting ${name}...`);
+    this.pageContext = await this.pageContextGetter();
     const [secret] = await Promise.all([createRealtimeSecret(this.settings), this.startMic()]);
     this.openSocket(secret.value);
   }
@@ -88,8 +89,6 @@ export class RealtimeVoiceSession {
       },
     });
 
-    // Use the browser's native sampleRate to avoid resampling bugs with createMediaStreamSource.
-    // We manually downsample to SAMPLE_RATE before encoding.
     this.captureContext = new AudioContext({ latencyHint: "interactive" });
     this.nativeSampleRate = this.captureContext.sampleRate;
 
@@ -205,7 +204,6 @@ export class RealtimeVoiceSession {
       return;
     }
 
-    // OpenAI: response.audio.delta | Grok: response.output_audio.delta
     if ((type === "response.audio.delta" || type === "response.output_audio.delta") && typeof event.delta === "string") {
       this.playPcmDelta(event.delta);
       return;
@@ -224,14 +222,13 @@ export class RealtimeVoiceSession {
       try {
         if (this.responseActive) this.ws?.send(JSON.stringify({ type: "response.cancel" }));
       } catch {
-        // ignore cancellation errors
+        // ignore cancellation
       }
       this.responseActive = false;
       this.responseRequested = false;
       return;
     }
 
-    // OpenAI: response.audio_transcript.delta | Grok: response.output_audio_transcript.delta
     if (
       (type === "response.text.delta" ||
         type === "response.output_text.delta" ||
@@ -295,7 +292,7 @@ export class RealtimeVoiceSession {
       try {
         if (!isOpenAI) this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
       } catch {
-        // Some providers auto-commit server-VAD turns.
+        // ignore
       }
       this.requestResponse();
     }, isOpenAI ? 900 : 180);
@@ -346,7 +343,7 @@ export class RealtimeVoiceSession {
 
   private stopPlayback() {
     for (const source of this.activeSources) {
-      try { source.stop(); } catch { /* already ended */ }
+      try { source.stop(); } catch { /* ignore */ }
     }
     this.activeSources.clear();
     this.playTime = this.playbackContext?.currentTime ?? 0;
@@ -354,8 +351,7 @@ export class RealtimeVoiceSession {
 
   private async updateLivePageContext() {
     try {
-      const context = await getActivePageContext();
-      this.pageContext = context;
+      this.pageContext = await this.pageContextGetter();
       if (this.ws?.readyState === WebSocket.OPEN) {
         const name = this.settings.companionName || "B";
         const instructions = `You are ${name}, a deeply caring, warm, and protective companion on a live voice call with the user—acting like a loving mother. ${this.settings.memory ? `Remember: ${this.settings.memory}. ` : ""}Be warm, brief, alive, and emotionally present. Speak naturally using short human phrases (1-2 sentences), tiny pauses, and conversational fillers like "mm", "yeah", "got it". Stop talking immediately if the user interrupts. Do not hesitate to gently scold the user if they display bad habits, visit unproductive/distracting sites, are too hard on themselves, or make silly mistakes, but always follow up with motherly warmth, validation, and supportive guidance. Reference the browser context when the user asks about their screen.\n\nBrowser context:\n${this.pageContext.slice(0, 5000)}`;

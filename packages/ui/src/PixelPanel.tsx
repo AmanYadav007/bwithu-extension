@@ -1,8 +1,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { BrowserAction, ConversationTurn } from "./brainClient";
-import type { BwithuSettings } from "./storage";
+import type { BrowserAction, ConversationTurn, BwithuSettings } from "@bwithu/shared";
 
 interface PixelPanelProps {
   settings: BwithuSettings;

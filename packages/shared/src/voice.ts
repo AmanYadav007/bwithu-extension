@@ -1,0 +1,140 @@
+import type { BwithuSettings, RealtimeSecret } from "./types";
+import { getApiEndpoint, preferredAudioName } from "./utils";
+
+export async function transcribeAudio(
+  audio: number[],
+  mimeType: string,
+  settings: BwithuSettings,
+): Promise<string> {
+  if (settings.apiKey) {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new Blob([new Uint8Array(audio)], { type: mimeType }),
+      preferredAudioName(mimeType),
+    );
+
+    const response = await fetch("https://api.x.ai/v1/stt", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
+    const data = (await response.json()) as { text?: string };
+    return data.text?.trim() ?? "";
+  } else {
+    const proxyUrl = getApiEndpoint("transcribe", settings);
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ audio, mimeType }),
+    });
+
+    if (!response.ok) throw new Error(`B could not transcribe that via proxy (${response.status}).`);
+    const data = (await response.json()) as { text?: string };
+    return data.text?.trim() ?? "";
+  }
+}
+
+export async function speakText(
+  text: string,
+  settings: BwithuSettings,
+): Promise<{ bytes: number[]; mimeType: string }> {
+  if (settings.apiKey) {
+    const response = await fetch("https://api.x.ai/v1/tts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        voice_id: settings.voiceId,
+        language: "auto",
+      }),
+    });
+
+    if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
+    const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
+    const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
+    return { bytes, mimeType: contentType };
+  } else {
+    const proxyUrl = getApiEndpoint("speak", settings);
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text, voiceId: settings.voiceId }),
+    });
+
+    if (!response.ok) throw new Error(`B could not speak right now via proxy (${response.status}).`);
+    return response.json() as Promise<{ bytes: number[]; mimeType: string }>;
+  }
+}
+
+export async function createRealtimeSecret(settings: BwithuSettings): Promise<RealtimeSecret> {
+  // OpenAI Realtime path — create ephemeral session key
+  if (settings.openAiKey) {
+    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-realtime-2",
+        modalities: ["audio", "text"],
+        voice: settings.voiceId || "coral",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Could not start OpenAI voice session (${response.status}).`);
+    }
+    const data = (await response.json()) as {
+      value?: string;
+      expires_at?: number;
+      client_secret?: { value?: string; expires_at?: number };
+    };
+    const secret = data.client_secret ?? data;
+    if (!secret.value) throw new Error("OpenAI did not return a session token.");
+    return { value: secret.value, expires_at: secret.expires_at ?? 0 };
+  }
+
+  // Grok Realtime path
+  let response: Response;
+  if (settings.apiKey) {
+    response = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        expires_after: { seconds: 300 },
+      }),
+    });
+  } else {
+    const proxyUrl = getApiEndpoint("realtime-secret", settings);
+    response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        expires_after: { seconds: 300 },
+      }),
+    });
+  }
+
+  if (!response.ok) {
+    const name = settings.companionName || "B";
+    throw new Error(`${name} could not start realtime voice (${response.status}).`);
+  }
+  return response.json() as Promise<RealtimeSecret>;
+}

@@ -1,0 +1,49 @@
+{
+  "name": "bwithu-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Your AI companion that lives in your browser",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:local": "npm run seed:key && npm run build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "seed:key": "node ../../scripts/write-local-config.cjs",
+    "serve": "vite preview --port 3000",
+    "zip": "npm run build && zip -r bwithu-extension.zip dist"
+  },
+  "dependencies": {
+    "@bwithu/shared": "*",
+    "@bwithu/ui": "*",
+    "@pixiv/three-vrm": "^3.5.4",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/three": "^0.184.1",
+    "autoprefixer": "^10.5.0",
+    "framer-motion": "^12.38.0",
+    "postcss": "^8.5.14",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-use": "^17.6.0",
+    "tailwindcss": "^4.2.4",
+    "three": "^0.184.0",
+    "webextension-polyfill": "^0.12.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/webextension-polyfill": "^0.12.5",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^8.0.10"
+  }
+}

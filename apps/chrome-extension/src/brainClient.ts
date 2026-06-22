@@ -1,39 +1,4 @@
-import type { BwithuSettings } from "./storage";
-
-export interface BrowserAction {
-  kind:
-    | "open_url"
-    | "search"
-    | "switch_tab"
-    | "read_current_page"
-    | "read_tab_context"
-    | "create_calendar_event"
-    | "hide_bear";
-  payload: Record<string, string>;
-}
-
-export interface BrainReply {
-  type: "reply" | "browser_action";
-  message: string;
-  action?: BrowserAction;
-  requiresConfirmation: boolean;
-  display?: {
-    kind: "weather" | "search" | "info" | "tab_picker" | "confirmation" | "error" | "memory";
-    title: string;
-    content: string;
-  };
-  memoryUpdate?: string;
-}
-
-export interface ConversationTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface RealtimeSecret {
-  value: string;
-  expires_at: number;
-}
+import type { BwithuSettings, BrowserAction, BrainReply, ConversationTurn, RealtimeSecret } from "@bwithu/shared";
 
 interface RuntimeLike {
   id?: string;

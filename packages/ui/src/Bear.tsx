@@ -5,13 +5,10 @@ import GLBCharacter from "./GLBCharacter";
 import SpritePlayer from "./SpritePlayer";
 import SpeechBubble from "./SpeechBubble";
 import InfoDisplay from "./InfoDisplay";
-import { animationConfigs, INTRO_TEXT } from "./animationStates";
-import type { BearState } from "./animationStates";
-import type { BearMood } from "./behaviorController";
+import { animationConfigs, INTRO_TEXT } from "@bwithu/shared";
+import type { BearState, BearMood, BearPosition, BwithuSettings, BrowserAction } from "@bwithu/shared";
+import { loadBearPosition, saveBearPosition } from "@bwithu/shared";
 import { playClickPop } from "./sounds";
-import type { BearPosition, BwithuSettings } from "./storage";
-import type { BrowserAction } from "./brainClient";
-import { loadBearPosition, saveBearPosition } from "./storage";
 
 const SIZE = 320;
 const DEFAULT_MARGIN = 40;

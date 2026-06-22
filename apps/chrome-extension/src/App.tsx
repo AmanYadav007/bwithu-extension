@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const chrome: any;
-import Bear from "./Bear";
-import PixelPanel from "./PixelPanel";
-import type { BearState } from "./animationStates";
-import { nextBehaviorState, stateDuration } from "./behaviorController";
-import type { BehaviorEvent } from "./behaviorController";
-import type { BrowserAction, BrainReply, ConversationTurn } from "./brainClient";
+import { Bear, PixelPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
+import {
+  useBearStore,
+  nextBehaviorState,
+  stateDuration,
+  RealtimeVoiceSession,
+  loadSettings,
+  saveSettings,
+  loadMessages,
+  saveMessages,
+  resetBearPosition,
+  DEFAULT_SETTINGS,
+} from "@bwithu/shared";
+import type { BearState, BehaviorEvent, BrowserAction, BrainReply, ConversationTurn, BwithuSettings } from "@bwithu/shared";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
-import { useBearStore } from "./bearStore";
 import { getActivePageContext } from "./pageContext";
-import { RealtimeVoiceSession } from "./realtimeVoice";
-import { playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "./sounds";
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadMessages, saveMessages, resetBearPosition } from "./storage";
-import type { BwithuSettings } from "./storage";
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 type MicPermissionStatus = "unknown" | "prompt" | "requesting" | "granted" | "denied" | "unsupported";
@@ -720,7 +723,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setBearState("listen");
 
     try {
-      const browserContext = await getBrowserContext(await getActivePageContext());
       const session = new RealtimeVoiceSession(settings, {
         onUserTranscript: (text) => {
           setBearState("listen");
@@ -756,7 +758,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           else if (lowered.includes("thinking") || lowered.includes("connecting")) setBearState("think");
           else if (lowered.includes("answering") || lowered.includes("speaking")) setBearState("talk");
         },
-      }, browserContext);
+      }, async () => getBrowserContext(await getActivePageContext()));
       realtimeVoiceRef.current = session;
       await session.start();
       setIsRecording(true);

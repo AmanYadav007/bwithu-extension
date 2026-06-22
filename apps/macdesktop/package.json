@@ -1,0 +1,27 @@
+{
+  "name": "bwithu-mac",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite & tsc -p tsconfig.electron.json --watch & wait-on http://localhost:5173 && electron .",
+    "build": "vite build && tsc -p tsconfig.electron.json",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@bwithu/shared": "*",
+    "@bwithu/ui": "*",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^34.0.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.10",
+    "wait-on": "^8.0.1"
+  }
+}

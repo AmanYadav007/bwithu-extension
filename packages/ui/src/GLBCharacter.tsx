@@ -3,8 +3,7 @@ import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { BearState } from "./animationStates";
-import type { BearMood } from "./behaviorController";
+import type { BearState, BearMood } from "@bwithu/shared";
 
 interface GLBCharacterProps {
   modelSrc: string;
