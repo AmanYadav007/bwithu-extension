@@ -12,6 +12,7 @@ export interface BwithuSettings {
   braveApiKey: string;
   googleClientId: string;
   characterRenderer: "glb" | "sprite";
+  characterModelUrl: string;
   voiceId: string;
   soundEnabled: boolean;
   voiceEnabled: boolean;
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   braveApiKey: "",
   googleClientId: "",
   characterRenderer: "glb",
+  characterModelUrl: "",
   voiceId: "coral",
   soundEnabled: true,
   voiceEnabled: true,
@@ -142,17 +144,20 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
     if (!response.ok) return {};
     const config = (await response.json()) as {
       XAI_API_KEY?: string;
+      OPENAI_API_KEY?: string;
       BRAVE_SEARCH_API_KEY?: string;
       BRAVE_API_KEY?: string;
       GOOGLE_CLIENT_ID?: string;
       BWITHU_PROXY_URL?: string;
       apiKey?: string;
+      openAiKey?: string;
       braveApiKey?: string;
       googleClientId?: string;
       proxyUrl?: string;
     };
     return {
       apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
+      openAiKey: config.openAiKey ?? config.OPENAI_API_KEY ?? "",
       braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
       googleClientId: config.googleClientId ?? config.GOOGLE_CLIENT_ID ?? "",
       proxyUrl: config.proxyUrl ?? config.BWITHU_PROXY_URL ?? "",
@@ -176,4 +181,3 @@ export async function loadMessages(): Promise<ConversationTurn[]> {
 export async function saveMessages(messages: ConversationTurn[]) {
   await setStored(MESSAGES_KEY, messages);
 }
-

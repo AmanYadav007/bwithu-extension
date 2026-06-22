@@ -270,6 +270,15 @@ export default function PixelPanel({
               </select>
             </label>
           </div>
+          <label>
+            Character file
+            <input
+              value={settings.characterModelUrl || ""}
+              onChange={(event) => onSettingsChange({ ...settings, characterModelUrl: event.target.value.trim() })}
+              placeholder="result.glb or b.vrm"
+              type="text"
+            />
+          </label>
           <div className="bwithu-settings__row">
             <label>
               Move

@@ -438,16 +438,22 @@ async function createRealtimeSecret(settings: BwithuSettings) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-realtime-preview",
+        model: "gpt-realtime-2",
+        modalities: ["audio", "text"],
         voice: storedSettings.voiceId || "coral",
       }),
     });
     if (!response.ok) {
       throw new Error(`Could not start OpenAI voice session (${response.status}).`);
     }
-    const data = (await response.json()) as { client_secret?: { value: string; expires_at: number } };
-    if (!data.client_secret?.value) throw new Error("OpenAI did not return a session token.");
-    return { value: data.client_secret.value, expires_at: data.client_secret.expires_at };
+    const data = (await response.json()) as {
+      value?: string;
+      expires_at?: number;
+      client_secret?: { value?: string; expires_at?: number };
+    };
+    const secret = data.client_secret ?? data;
+    if (!secret.value) throw new Error("OpenAI did not return a session token.");
+    return { value: secret.value, expires_at: secret.expires_at ?? 0 };
   }
 
   // Grok Realtime path

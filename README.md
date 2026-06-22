@@ -1,89 +1,53 @@
 # BwithU Chrome Extension
 
-A delightful AI companion that lives in your browser. This extension features a cute animated bear that drops, bounces, and introduces itself with voice and speech bubbles.
-
-## Features
-
-- **Animated Bear**: SVG bear with Framer Motion animations
-- **Drop & Bounce**: Realistic falling and squash/stretch landing
-- **Idle Behaviors**: Random blinking, head tilts, waving, yawning
-- **Speech Bubble**: Typewriter-style introduction with two lines
-- **Voice Intro**: Uses Web Speech API for calm voice greeting
-- **Floating Particles**: Ambient glow particles for magical feel
-- **Premium UI**: Dark glassmorphism design with Tailwind CSS
-
-## Tech Stack
-
-- React 18 + TypeScript
-- Vite for building
-- Framer Motion for animations
-- Tailwind CSS for styling
-- Chrome Extension Manifest V3
-- Web Speech API
-
-## Project Structure
-
-```
-bwithu-extension/
-├── public/
-│   ├── manifest.json
-│   └── icons/
-├── src/
-│   ├── components/
-│   │   ├── Bear.tsx          # Animated bear component
-│   │   ├── IntroBubble.tsx   # Speech bubble
-│   │   └── FloatingParticle.tsx
-│   ├── hooks/
-│   │   ├── useSpeech.ts      # Speech synthesis hook
-│   │   └── useIdle.ts        # Idle behavior system
-│   ├── App.tsx               # Main popup layout
-│   └── index.css             # Global styles
-├── tailwind.config.js
-├── vite.config.ts
-└── package.json
-```
+BwithU is a Chrome MV3 side-panel companion. The beta direction is a live “B Call Screen”: a persistent side panel with a large animated character, microphone-first voice interaction, browser/page awareness, tab actions, search cards, and short captions.
 
 ## Development
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+npm run dev
+npm run build
+```
 
-2. Run dev server:
-   ```bash
-   npm run dev
-   ```
+Load the built extension from `dist` in `chrome://extensions` with Developer Mode enabled.
 
-3. Build for production:
-   ```bash
-   npm run build
-   ```
+## Local Keys
 
-4. Load extension in Chrome:
-   - Open `chrome://extensions`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `bwithu-extension/dist` folder
+For local development, create `.env` and run:
 
-## Usage
+```bash
+npm run build:local
+```
 
-Click the extension icon to see:
-1. Bear drops from top with squash/stretch animation
-2. Bear bounces and settles into idle floating
-3. Speech bubble appears with typewriter text
-4. Voice speaks introduction
-5. Bear continues idle animations (blinking, tilting, etc.)
+Supported variables:
 
-## Future Enhancements
+```bash
+OPENAI_API_KEY=sk-...
+XAI_API_KEY=xai-...
+BRAVE_SEARCH_API_KEY=...
+BWITHU_PROXY_URL=https://...
+GOOGLE_CLIENT_ID=...
+```
 
-- AI integration (GPT)
-- Memory system
-- Browser interaction
-- Voice commands
-- Customization settings
+`OPENAI_API_KEY` is the recommended path for realtime voice. Production builds strip private keys from `dist/local-config.json`; use a proxy URL for distributable builds.
 
-## License
+## Character Pipeline
 
-MIT
-# bwithu-extension
+The current renderer supports ordinary GLB assets and is ready for professional characters:
+
+- Embedded animation clips are auto-mapped by names like `idle`, `talk`, `listen`, `wave`, `happy`, and `walk`.
+- Common head, neck, eye, hand, and arm bones get subtle procedural motion.
+- Common morph targets like mouth open, jaw open, smile, blink, and viseme-style names are driven from B’s state.
+
+Recommended asset workflow:
+
+1. Create/export a character from Reallusion Character Creator.
+2. Animate or prepare idle/listen/talk/wave clips in iClone, Mixamo, Blender, or equivalent.
+3. Export an optimized GLB or VRM with textures, animation clips, bones, and facial morph targets.
+4. Put the file in `public/`, for example `public/b.vrm`.
+5. Open B settings and set `Character file` to `b.vrm`.
+
+VRM support uses `@pixiv/three-vrm`, so standard VRM humanoid bones and expressions are used when present.
+
+Keep the side panel as the default experience. The content script should only collect page context.

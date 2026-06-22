@@ -4,6 +4,7 @@ import { getActivePageContext } from "./pageContext";
 
 const SAMPLE_RATE = 24000;
 const GROK_MODEL = "grok-voice-think-fast-1.0";
+const OPENAI_REALTIME_MODEL = "gpt-realtime-2";
 
 interface RealtimeVoiceCallbacks {
   onUserTranscript: (text: string) => void;
@@ -29,6 +30,8 @@ export class RealtimeVoiceSession {
   private activeSources = new Set<AudioBufferSourceNode>();
   private heardUserTranscript = false;
   private responseActive = false;
+  private responseRequested = false;
+  private turnFinalizeTimer: ReturnType<typeof setTimeout> | null = null;
   private pageContext: string;
 
   constructor(
@@ -61,6 +64,10 @@ export class RealtimeVoiceSession {
   }
 
   close() {
+    if (this.turnFinalizeTimer) {
+      clearTimeout(this.turnFinalizeTimer);
+      this.turnFinalizeTimer = null;
+    }
     this.stopMic();
     this.stopPlayback();
     this.ws?.close();
@@ -119,7 +126,7 @@ export class RealtimeVoiceSession {
   private openSocket(secret: string) {
     const isOpenAI = Boolean(this.settings.openAiKey);
     const url = isOpenAI
-      ? `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`
+      ? `wss://api.openai.com/v1/realtime?model=${OPENAI_REALTIME_MODEL}`
       : `wss://api.x.ai/v1/realtime?model=${GROK_MODEL}&smart_turn=0.5&smart_turn_timeout=1200`;
     const protocols: string[] = isOpenAI
       ? ["realtime", `openai-insecure-api-key.${secret}`]
@@ -189,6 +196,12 @@ export class RealtimeVoiceSession {
 
     if (type === "response.created") {
       this.responseActive = true;
+      this.responseRequested = true;
+      return;
+    }
+
+    if (type === "error") {
+      this.handleRealtimeError(event);
       return;
     }
 
@@ -199,6 +212,10 @@ export class RealtimeVoiceSession {
     }
 
     if (type === "input_audio_buffer.speech_started") {
+      if (this.turnFinalizeTimer) {
+        clearTimeout(this.turnFinalizeTimer);
+        this.turnFinalizeTimer = null;
+      }
       this.stopPlayback();
       this.assistantText = "";
       const name = this.settings.companionName || "B";
@@ -210,6 +227,7 @@ export class RealtimeVoiceSession {
         // ignore cancellation errors
       }
       this.responseActive = false;
+      this.responseRequested = false;
       return;
     }
 
@@ -236,25 +254,66 @@ export class RealtimeVoiceSession {
     }
 
     if (type === "response.done") {
+      const failureMessage = getResponseFailureMessage(event);
+      if (failureMessage) {
+        this.responseActive = false;
+        this.responseRequested = false;
+        this.callbacks.onStatus(`Voice error: ${failureMessage}`);
+        this.callbacks.onAssistantDone("");
+        return;
+      }
       this.callbacks.onAssistantDone(this.assistantText.trim());
       this.assistantText = "";
       this.responseActive = false;
+      this.responseRequested = false;
       this.heardUserTranscript = false;
       this.callbacks.onStatus("");
       return;
     }
 
-    if (type === "input_audio_buffer.speech_stopped" || type === "input_audio_buffer.committed") {
+    if (type === "input_audio_buffer.speech_stopped") {
       const name = this.settings.companionName || "B";
       this.callbacks.onStatus(`${name} is thinking...`);
+      this.finalizeInputTurn();
       return;
     }
+
+    if (type === "input_audio_buffer.committed") {
+      const name = this.settings.companionName || "B";
+      this.callbacks.onStatus(`${name} is thinking...`);
+      if (!this.responseActive && !this.responseRequested) this.requestResponse();
+      return;
+    }
+  }
+
+  private finalizeInputTurn() {
+    if (this.turnFinalizeTimer) clearTimeout(this.turnFinalizeTimer);
+    const isOpenAI = Boolean(this.settings.openAiKey);
+    this.turnFinalizeTimer = setTimeout(() => {
+      this.turnFinalizeTimer = null;
+      if (this.responseActive || this.responseRequested || this.ws?.readyState !== WebSocket.OPEN) return;
+      try {
+        if (!isOpenAI) this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      } catch {
+        // Some providers auto-commit server-VAD turns.
+      }
+      this.requestResponse();
+    }, isOpenAI ? 900 : 180);
   }
 
   private requestResponse() {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     this.responseActive = true;
+    this.responseRequested = true;
     this.ws.send(JSON.stringify({ type: "response.create" }));
+  }
+
+  private handleRealtimeError(event: Record<string, unknown>) {
+    const message = getRealtimeErrorMessage(event);
+    this.responseActive = false;
+    this.responseRequested = false;
+    console.error("Realtime voice error", event);
+    this.callbacks.onStatus(`Voice error: ${message}`);
   }
 
   private getPlaybackContext(): AudioContext {
@@ -359,4 +418,38 @@ function base64ToBytes(base64: string) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function getRealtimeErrorMessage(event: Record<string, unknown>) {
+  const error = event.error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && code.trim()) return code.trim();
+  }
+  const message = event.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  return "Realtime voice could not answer.";
+}
+
+function getResponseFailureMessage(event: Record<string, unknown>) {
+  const response = event.response;
+  if (!response || typeof response !== "object") return "";
+
+  const status = (response as { status?: unknown }).status;
+  if (typeof status === "string" && status !== "failed" && status !== "incomplete") return "";
+
+  const details = (response as { status_details?: unknown }).status_details;
+  if (details && typeof details === "object") {
+    const error = (details as { error?: unknown }).error;
+    if (error && typeof error === "object") {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message.trim();
+    }
+    const reason = (details as { reason?: unknown }).reason;
+    if (typeof reason === "string" && reason.trim()) return reason.trim();
+  }
+
+  return typeof status === "string" ? `Response ${status}.` : "";
 }

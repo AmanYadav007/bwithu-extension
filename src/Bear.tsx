@@ -138,10 +138,15 @@ export default function Bear({
   controls,
   isSidePanel = false,
   sidePanelWidth = 320,
+  sidePanelHeight = 600,
 }: BearProps) {
   const x = useMotionValue(defaultPosition().x);
   const y = useMotionValue(defaultPosition().y);
-  const panelSize = Math.min(420, Math.max(280, sidePanelWidth * 0.9));
+  const panelSize = Math.min(
+    Math.max(300, sidePanelWidth * 0.82),
+    Math.max(320, sidePanelHeight * 0.62),
+    640,
+  );
   const [positionReady, setPositionReady] = useState(isSidePanel);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [glbUnavailable, setGlbUnavailable] = useState(false);
@@ -365,7 +370,7 @@ export default function Bear({
             </motion.span>
           ))}
         </AnimatePresence>
-        {(showIntro || speechText) && (
+        {!isSidePanel && (showIntro || speechText) && (
           <SpeechBubble
             text={speechText || INTRO_TEXT}
             onComplete={showIntro ? onIntroComplete : () => undefined}
@@ -419,7 +424,7 @@ export default function Bear({
         {controls}
         {useGlbRenderer ? (
           <GLBCharacter
-            modelSrc={resolveAsset("result.glb")}
+            modelSrc={resolveAsset(settings.characterModelUrl || "result.glb")}
             state={animationState}
             mood={mood}
             facing={facing}

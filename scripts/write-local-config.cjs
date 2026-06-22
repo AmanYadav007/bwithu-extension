@@ -12,6 +12,7 @@ if (!fs.existsSync(envPath)) {
 
 const env = fs.readFileSync(envPath, "utf8");
 const xaiMatch = env.match(/^XAI_API_KEY=(.+)$/m);
+const openAiMatch = env.match(/^OPENAI_API_KEY=(.+)$/m);
 const braveMatch = env.match(/^(?:BRAVE_SEARCH_API_KEY|BRAVE_API_KEY)=(.+)$/m);
 const googleClientMatch = env.match(/^GOOGLE_CLIENT_ID=(.+)$/m);
 const proxyMatch = env.match(/^BWITHU_PROXY_URL=(.+)$/m);
@@ -21,6 +22,7 @@ fs.writeFileSync(
   `${JSON.stringify(
     {
       ...(xaiMatch?.[1] ? { XAI_API_KEY: xaiMatch[1].trim() } : {}),
+      ...(openAiMatch?.[1] ? { OPENAI_API_KEY: openAiMatch[1].trim() } : {}),
       ...(braveMatch?.[1] ? { BRAVE_SEARCH_API_KEY: braveMatch[1].trim() } : {}),
       ...(googleClientMatch?.[1] ? { GOOGLE_CLIENT_ID: googleClientMatch[1].trim() } : {}),
       ...(proxyMatch?.[1] ? { BWITHU_PROXY_URL: proxyMatch[1].trim() } : {}),

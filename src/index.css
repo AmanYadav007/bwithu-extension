@@ -1103,6 +1103,12 @@ html, body {
   transform: none !important;
 }
 
+.bwithu-sidepanel-layout .bwithu-bear-stage {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 72%;
+}
+
 .bwithu-call-header {
   flex-shrink: 0;
   display: flex;
@@ -1173,7 +1179,7 @@ html, body {
   overflow: hidden;
   position: relative;
   min-height: 0;
-  padding-bottom: 1vh;
+  padding: 3vh 0 7vh;
   background:
     radial-gradient(circle at 50% 40%, rgba(255, 205, 129, 0.16), transparent 24%),
     radial-gradient(circle at 48% 58%, rgba(14, 165, 233, 0.08), transparent 34%),
@@ -1369,11 +1375,11 @@ html, body {
 .bwithu-call-controls {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) repeat(4, 38px);
+  grid-template-columns: 56px minmax(0, 1fr) repeat(5, 42px);
   align-items: center;
-  gap: 8px;
-  padding: 10px 10px 14px;
-  background: rgba(12, 9, 8, 0.58);
+  gap: 10px;
+  padding: 14px 20px 18px;
+  background: rgba(8, 6, 5, 0.74);
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1382,13 +1388,13 @@ html, body {
 
 .bwithu-call-controls input {
   min-width: 0;
-  height: 42px;
-  padding: 0 12px;
+  height: 48px;
+  padding: 0 18px;
   color: #f8fafc;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  font: 600 13px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  border-radius: 26px;
+  font: 700 16px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
   outline: 0;
 }
 
@@ -1401,8 +1407,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   padding: 0;
   color: #f8fafc;
   background: rgba(255, 255, 255, 0.08);
@@ -1420,8 +1426,8 @@ html, body {
 }
 
 .bwithu-call-control--mic {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: linear-gradient(145deg, #dc2626, #b91c1c);
   border: 2px solid rgba(255, 255, 255, 0.18);
@@ -1493,23 +1499,67 @@ html, body {
   cursor: pointer;
 }
 
-@media (max-width: 460px) {
+@media (max-width: 700px) {
   .bwithu-call-controls {
-    grid-template-columns: 50px minmax(0, 1fr) repeat(4, 34px);
-    gap: 6px;
-    padding-left: 8px;
-    padding-right: 8px;
+    grid-template-columns: 56px minmax(0, 1fr) 44px;
+    gap: 8px;
+    padding: 12px 14px 14px;
+  }
+
+  .bwithu-call-controls input {
+    grid-column: 2;
+    height: 46px;
+    min-width: 0;
+    font-size: 15px;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(1) {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(2) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(n + 3) {
+    grid-row: 2;
+    width: 36px;
+    height: 36px;
+    justify-self: end;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(3) {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(4) {
+    grid-column: 2;
+    justify-self: center;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(5) {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .bwithu-call-controls .bwithu-call-control:nth-of-type(6) {
+    grid-column: 3;
+    justify-self: center;
   }
 
   .bwithu-call-control {
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
     font-size: 14px;
   }
 
   .bwithu-call-control--mic {
-    width: 50px;
-    height: 50px;
+    width: 56px;
+    height: 56px;
     font-size: 21px;
   }
 }
@@ -1519,7 +1569,7 @@ html, body {
   position: absolute !important;
   left: 12px !important;
   right: 12px !important;
-  bottom: 12px !important;
+  bottom: 18px !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 6px !important;
@@ -1531,16 +1581,16 @@ html, body {
 }
 
 .bwithu-sidepanel-layout .bwithu-conversation-bubble {
-  max-width: 85% !important;
-  max-height: 44px !important;
+  max-width: min(78%, 520px) !important;
+  max-height: 58px !important;
   overflow: hidden !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   text-overflow: ellipsis !important;
-  padding: 8px 12px !important;
+  padding: 10px 14px !important;
   border-radius: 12px !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   line-height: 1.4 !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22) !important;
 }
@@ -1567,7 +1617,7 @@ html, body {
 
 .bwithu-sidepanel-layout .bwithu-conversation-bubble--user:only-child,
 .bwithu-sidepanel-layout .bwithu-conversation-bubble--assistant:only-child {
-  max-width: 85% !important;
+  max-width: min(78%, 520px) !important;
 }
 
 .bwithu-sidepanel-layout .bwithu-conversation-bubble--user:only-child {
@@ -1577,4 +1627,3 @@ html, body {
 .bwithu-sidepanel-layout .bwithu-conversation-bubble--assistant:only-child {
   align-self: flex-start !important;
 }
-

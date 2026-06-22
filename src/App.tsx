@@ -717,19 +717,23 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     setStatus("Opening live voice...");
     if (settings.soundEnabled) playListenStart();
     dispatchBehavior("voiceStarted");
+    setBearState("listen");
 
     try {
       const browserContext = await getBrowserContext(await getActivePageContext());
       const session = new RealtimeVoiceSession(settings, {
         onUserTranscript: (text) => {
+          setBearState("listen");
           setLiveCaption(text);
           setMessages((current) => [...current, { role: "user" as const, content: text }].slice(-8));
         },
         onAssistantText: (text) => {
+          setBearState("talk");
           setAssistantCaption(text);
           setSpeechText(text || "...");
         },
         onAssistantDone: (text) => {
+          setBearState("talk");
           if (text) {
             setMessages((current) => [...current, { role: "assistant" as const, content: text }].slice(-8));
             setAssistantCaption(text);
@@ -740,11 +744,18 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           window.setTimeout(() => {
             if (realtimeVoiceRef.current) {
               setStatus("Listening live...");
+              setBearState("listen");
               dispatchBehavior("voiceStarted");
             }
           }, 450);
         },
-        onStatus: setStatus,
+        onStatus: (nextStatus) => {
+          setStatus(nextStatus);
+          const lowered = nextStatus.toLowerCase();
+          if (lowered.includes("listening")) setBearState("listen");
+          else if (lowered.includes("thinking") || lowered.includes("connecting")) setBearState("think");
+          else if (lowered.includes("answering") || lowered.includes("speaking")) setBearState("talk");
+        },
       }, browserContext);
       realtimeVoiceRef.current = session;
       await session.start();
@@ -865,13 +876,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         )}
         {!showChatPanel && (latestAssistantMessage || latestUserMessage) && (
           <div className="bwithu-conversation-strip" aria-live="polite">
-            {latestAssistantMessage ? (
-              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
-                {latestAssistantMessage}
-              </div>
-            ) : (
+            {latestUserMessage && (
               <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
                 {latestUserMessage}
+              </div>
+            )}
+            {latestAssistantMessage && (
+              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
+                {latestAssistantMessage}
               </div>
             )}
           </div>
@@ -943,6 +955,21 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           <button type="submit" className="bwithu-call-control" title="Send message">➤</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("Read this page")} title="Read page">📄</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("What tabs are open?")} title="Tabs">▦</button>
+          <button
+            type="button"
+            className="bwithu-call-control"
+            onClick={() => {
+              const query = callDraft.trim();
+              if (query) sendCallCommand(`Search the web for ${query}`);
+              else {
+                setSpeechText("Type what you want me to search.");
+                setAssistantCaption("Type what you want me to search.");
+              }
+            }}
+            title="Search"
+          >
+            🔍
+          </button>
           <button type="button" className="bwithu-call-control bwithu-call-control--quiet" onClick={openSettingsPanel} title="Settings">⚙️</button>
         </form>
       ) : (
