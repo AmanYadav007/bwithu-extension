@@ -4,6 +4,7 @@
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "rootDir": "electron",
     "outDir": "./dist-electron",
     "strict": true,
     "esModuleInterop": true,

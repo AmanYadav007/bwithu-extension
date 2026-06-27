@@ -42,6 +42,13 @@ export class RealtimeVoiceSession {
     this.settings = settings;
     this.callbacks = callbacks;
     this.pageContextGetter = pageContextGetter;
+    try {
+      this.captureContext = new AudioContext({ latencyHint: "interactive" });
+      this.playbackContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+      this.nativeSampleRate = this.captureContext.sampleRate;
+    } catch (e) {
+      console.warn("Could not pre-initialize AudioContext", e);
+    }
   }
 
   async start() {
@@ -89,28 +96,43 @@ export class RealtimeVoiceSession {
       },
     });
 
-    this.captureContext = new AudioContext({ latencyHint: "interactive" });
-    this.nativeSampleRate = this.captureContext.sampleRate;
-
-    if (this.captureContext.state === "suspended") await this.captureContext.resume();
-    this.source = this.captureContext.createMediaStreamSource(this.stream);
-    this.processor = this.captureContext.createScriptProcessor(4096, 1, 1);
-    const silentMonitor = this.captureContext.createGain();
-    silentMonitor.gain.value = 0;
-    this.source.connect(this.processor);
-    this.processor.connect(silentMonitor);
-    silentMonitor.connect(this.captureContext.destination);
-
-    this.processor.onaudioprocess = (event) => {
-      const input = event.inputBuffer.getChannelData(0);
-      const downsampled = downsampleFloat32(input, this.nativeSampleRate, SAMPLE_RATE);
-      const chunk = float32ToBase64PCM16(downsampled);
-      if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk }));
-      } else {
-        this.earlyAudio.push(chunk);
+    if (!this.captureContext) {
+      try {
+        this.captureContext = new AudioContext({ latencyHint: "interactive" });
+      } catch (e) {
+        console.error("Failed to create captureContext in startMic", e);
       }
-    };
+    }
+    if (this.captureContext) {
+      this.nativeSampleRate = this.captureContext.sampleRate;
+      if (this.captureContext.state === "suspended") {
+        try {
+          await this.captureContext.resume();
+        } catch (e) {
+          console.error("Failed to resume captureContext", e);
+        }
+      }
+      this.source = this.captureContext.createMediaStreamSource(this.stream);
+      this.processor = this.captureContext.createScriptProcessor(4096, 1, 1);
+      const silentMonitor = this.captureContext.createGain();
+      silentMonitor.gain.value = 0;
+      this.source.connect(this.processor);
+      this.processor.connect(silentMonitor);
+      silentMonitor.connect(this.captureContext.destination);
+
+      this.processor.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        const downsampled = downsampleFloat32(input, this.nativeSampleRate, SAMPLE_RATE);
+        const chunk = float32ToBase64PCM16(downsampled);
+        if (this.connected && this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk }));
+        } else {
+          this.earlyAudio.push(chunk);
+        }
+      };
+    } else {
+      throw new Error("AudioContext was not initialized.");
+    }
   }
 
   private stopMic() {
@@ -128,7 +150,7 @@ export class RealtimeVoiceSession {
       ? `wss://api.openai.com/v1/realtime?model=${OPENAI_REALTIME_MODEL}`
       : `wss://api.x.ai/v1/realtime?model=${GROK_MODEL}&smart_turn=0.5&smart_turn_timeout=1200`;
     const protocols: string[] = isOpenAI
-      ? ["realtime", `openai-insecure-api-key.${secret}`]
+      ? ["realtime", `openai-insecure-api-key.${secret}`, "openai-beta.realtime-v1"]
       : [`xai-client-secret.${secret}`];
 
     this.ws = new WebSocket(url, protocols);
@@ -181,12 +203,14 @@ export class RealtimeVoiceSession {
       this.handleEvent(event);
     };
 
-    this.ws.onerror = () => {
+    this.ws.onerror = (err) => {
+      console.error("Realtime voice WebSocket error:", err);
       this.callbacks.onStatus("Voice connection failed. Check your API key in settings.");
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
       this.connected = false;
+      console.log(`Realtime voice WebSocket closed: code=${event.code}, reason=${event.reason || "no reason given"}`);
     };
   }
 
