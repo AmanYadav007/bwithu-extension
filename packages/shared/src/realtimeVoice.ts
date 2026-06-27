@@ -52,6 +52,12 @@ export class RealtimeVoiceSession {
   }
 
   async start() {
+    if (this.captureContext && this.captureContext.state === "suspended") {
+      void this.captureContext.resume();
+    }
+    if (this.playbackContext && this.playbackContext.state === "suspended") {
+      void this.playbackContext.resume();
+    }
     const name = this.settings.companionName || "B";
     this.callbacks.onStatus(`Connecting ${name}...`);
     this.pageContext = await this.pageContextGetter();

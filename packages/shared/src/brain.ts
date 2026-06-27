@@ -16,10 +16,11 @@ export async function sendBrainMessage(
   webContext: string,
   tabs: GenericTab[] = [],
 ): Promise<BrainReply> {
+  const isUsingOpenAI = Boolean(settings.openAiKey);
   const requestBody = {
-    model: "grok-4.3",
+    model: isUsingOpenAI ? "gpt-4o" : "grok-4.3",
     temperature: 0.7,
-    reasoning_effort: "none",
+    reasoning_effort: isUsingOpenAI ? undefined : "none",
     max_tokens: 140,
     messages: [
       {
@@ -32,7 +33,16 @@ export async function sendBrainMessage(
   };
 
   let response: Response;
-  if (settings.apiKey) {
+  if (isUsingOpenAI) {
+    response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } else if (settings.apiKey) {
     response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -52,7 +62,7 @@ export async function sendBrainMessage(
     });
   }
 
-  if (!response.ok) throw new Error(`Grok could not think right now (${response.status}).`);
+  if (!response.ok) throw new Error(`${isUsingOpenAI ? "OpenAI" : "Grok"} could not think right now (${response.status}).`);
 
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content ?? "";

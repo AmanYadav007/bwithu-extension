@@ -6,7 +6,27 @@ export async function transcribeAudio(
   mimeType: string,
   settings: BwithuSettings,
 ): Promise<string> {
-  if (settings.apiKey) {
+  if (settings.openAiKey) {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new Blob([new Uint8Array(audio)], { type: mimeType }),
+      preferredAudioName(mimeType),
+    );
+    formData.append("model", "whisper-1");
+
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.openAiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
+    const data = (await response.json()) as { text?: string };
+    return data.text?.trim() ?? "";
+  } else if (settings.apiKey) {
     const formData = new FormData();
     formData.append(
       "file",
@@ -45,7 +65,25 @@ export async function speakText(
   text: string,
   settings: BwithuSettings,
 ): Promise<{ bytes: number[]; mimeType: string }> {
-  if (settings.apiKey) {
+  if (settings.openAiKey) {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        input: text,
+        voice: settings.voiceId || "coral",
+      }),
+    });
+
+    if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
+    const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
+    const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
+    return { bytes, mimeType: contentType };
+  } else if (settings.apiKey) {
     const response = await fetch("https://api.x.ai/v1/tts", {
       method: "POST",
       headers: {

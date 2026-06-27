@@ -374,7 +374,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   }, [refreshEnvironmentalMood, enabled]);
 
   const playVoiceReply = useCallback(async (text: string) => {
-    if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl)) return;
+    if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey)) return;
 
     try {
       const blob = await speakText(text, settings);
@@ -498,9 +498,9 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         return;
       }
 
-      if (!settings.apiKey && !settings.proxyUrl) {
-        setStatus("Add your Grok key or check connection settings.");
-        setSpeechText("I need my Grok key setup before I can think.");
+      if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
+        setStatus("Add your Grok/OpenAI key or check connection settings.");
+        setSpeechText("I need my key setup before I can think.");
         return;
       }
 
@@ -609,8 +609,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const startLegacyRecording = useCallback(async () => {
     if (isRecording) return;
-    if (!settings.apiKey && !settings.proxyUrl) {
-      setStatus("Add your xAI API key, or run npm run seed:key and rebuild locally.");
+    if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
+      setStatus("Add your API key first.");
       return;
     }
 
@@ -754,9 +754,15 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         onStatus: (nextStatus) => {
           setStatus(nextStatus);
           const lowered = nextStatus.toLowerCase();
-          if (lowered.includes("listening")) setBearState("listen");
-          else if (lowered.includes("thinking") || lowered.includes("connecting")) setBearState("think");
-          else if (lowered.includes("answering") || lowered.includes("speaking")) setBearState("talk");
+          if (lowered.includes("listening")) {
+            setBearState("listen");
+            setLiveCaption("");
+            setAssistantCaption("");
+          } else if (lowered.includes("thinking") || lowered.includes("connecting")) {
+            setBearState("think");
+          } else if (lowered.includes("answering") || lowered.includes("speaking")) {
+            setBearState("talk");
+          }
         },
       }, async () => getBrowserContext(await getActivePageContext()));
       realtimeVoiceRef.current = session;

@@ -140,7 +140,7 @@ export default function PixelPanel({
                 </div>
               </div>
             ))}
-            {isRecording && liveCaption && (
+            {isRecording && liveCaption && !messages.some((m) => m.role === "user" && m.content === liveCaption) && (
               <div className="bwithu-chat-msg bwithu-chat-msg--user bwithu-chat-msg--streaming">
                 <div className="bwithu-chat-msg-bubble">
                   {liveCaption}

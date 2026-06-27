@@ -312,7 +312,7 @@ export default function App() {
   }, [refreshEnvironmentalMood]);
 
   const playVoiceReply = useCallback(async (text: string) => {
-    if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl)) return;
+    if (!settings.voiceEnabled || (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey)) return;
     try {
       const audioData = await speakText(text, settings);
       const blob = new Blob([new Uint8Array(audioData.bytes)], { type: audioData.mimeType });
@@ -386,9 +386,9 @@ export default function App() {
         }
       }
 
-      if (!settings.apiKey && !settings.proxyUrl) {
-        setStatus("Add your Grok key or check connection settings.");
-        setSpeechText("I need my Grok key setup before I can think.");
+      if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
+        setStatus("Add your Grok/OpenAI key or check connection settings.");
+        setSpeechText("I need my key setup before I can think.");
         return;
       }
 
@@ -609,9 +609,15 @@ export default function App() {
         onStatus: (nextStatus) => {
           setStatus(nextStatus);
           const lowered = nextStatus.toLowerCase();
-          if (lowered.includes("listening")) setBearState("listen");
-          else if (lowered.includes("thinking") || lowered.includes("connecting")) setBearState("think");
-          else if (lowered.includes("answering") || lowered.includes("speaking")) setBearState("talk");
+          if (lowered.includes("listening")) {
+            setBearState("listen");
+            setLiveCaption("");
+            setAssistantCaption("");
+          } else if (lowered.includes("thinking") || lowered.includes("connecting")) {
+            setBearState("think");
+          } else if (lowered.includes("answering") || lowered.includes("speaking")) {
+            setBearState("talk");
+          }
         },
       }, async () => "Standalone Desktop Window Context");
       realtimeVoiceRef.current = session;

@@ -261,7 +261,7 @@ function toCalendarDate(value = "") {
 }
 
 function assertApiKey(settings: BwithuSettings) {
-  if (!settings.apiKey && !settings.proxyUrl) {
-    throw new Error("Add your xAI API key or set up a proxy URL first.");
+  if (!settings.apiKey && !settings.proxyUrl && !settings.openAiKey) {
+    throw new Error("Add your xAI/OpenAI API key or set up a proxy URL first.");
   }
 }
