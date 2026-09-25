@@ -9,8 +9,21 @@ export function getApiEndpoint(endpoint: string, settings: BwithuSettings): stri
     if (endpoint === "search") return "https://api.search.brave.com/res/v1/web/search";
   }
 
-  const baseUrl = (settings.proxyUrl || "https://bwithu-proxy.vercel.app").replace(/\/$/, "");
+  const baseUrl = (settings.proxyUrl || DEFAULT_PROXY_URL).replace(/\/$/, "");
   return `${baseUrl}/api/${endpoint}`;
+}
+
+export const DEFAULT_PROXY_URL = "https://bwithu-extension.vercel.app";
+
+export const OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"];
+export const XAI_VOICES = ["ara", "eve", "rex", "sal", "leo"];
+
+// Voice ids are provider-specific: sending an OpenAI voice ("coral") to xAI fails with
+// "Voice not found", which silently muted every reply. Always resolve before calling a provider.
+export function resolveVoice(settings: BwithuSettings, provider: "openai" | "xai") {
+  const voice = (settings.voiceId || "").toLowerCase();
+  if (provider === "openai") return OPENAI_VOICES.includes(voice) ? voice : "coral";
+  return XAI_VOICES.includes(voice) ? voice : "ara";
 }
 
 export function stripHtml(value: string) {

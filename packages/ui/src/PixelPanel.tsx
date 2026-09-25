@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { resolveVoice } from "@bwithu/shared";
 import type { BrowserAction, ConversationTurn, BwithuSettings } from "@bwithu/shared";
 
 interface PixelPanelProps {
@@ -248,7 +249,7 @@ export default function PixelPanel({
             <label>
               Voice
               <select
-                value={settings.voiceId}
+                value={resolveVoice(settings, settings.openAiKey ? "openai" : "xai")}
                 onChange={(event) => onSettingsChange({ ...settings, voiceId: event.target.value })}
               >
                 {settings.openAiKey ? (
@@ -263,7 +264,10 @@ export default function PixelPanel({
                 ) : (
                   <>
                     <option value="ara">Ara (female)</option>
+                    <option value="eve">Eve (upbeat)</option>
                     <option value="rex">Rex (male)</option>
+                    <option value="sal">Sal</option>
+                    <option value="leo">Leo</option>
                   </>
                 )}
               </select>

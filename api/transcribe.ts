@@ -1,9 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guard } from "./_guard";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  if (!(await guard(req, res, "transcribe"))) return;
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
@@ -27,7 +29,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ error: "Missing audio array in request body." });
     }
 
-    const buffer = Buffer.from(audio);
     const formData = new FormData();
     const filename = mimeType.includes("mpeg")
       ? "recording.mp3"
@@ -35,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? "recording.ogg"
         : "recording.webm";
 
-    const blob = new Blob([buffer], { type: mimeType });
+    const blob = new Blob([new Uint8Array(audio)], { type: mimeType });
     formData.append("file", blob, filename);
 
     const response = await fetch("https://api.x.ai/v1/stt", {

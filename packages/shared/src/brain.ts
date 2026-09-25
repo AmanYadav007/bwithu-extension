@@ -1,6 +1,7 @@
 import type { BwithuSettings, BrainReply, ConversationTurn, BrowserAction } from "./types";
 import { getSystemPrompt } from "./prompts";
 import { getApiEndpoint, stripCodeFence, actionRequiresConfirmation } from "./utils";
+import { proxyError, proxyHeaders } from "./storage";
 
 export interface GenericTab {
   id?: number | string;
@@ -18,10 +19,13 @@ export async function sendBrainMessage(
 ): Promise<BrainReply> {
   const isUsingOpenAI = Boolean(settings.openAiKey);
   const requestBody = {
-    model: isUsingOpenAI ? "gpt-4o" : "grok-4.3",
+    model: isUsingOpenAI ? "gpt-4o-mini" : "grok-4.3",
     temperature: 0.7,
     reasoning_effort: isUsingOpenAI ? undefined : "none",
-    max_tokens: 140,
+    // 140 tokens truncated the JSON mid-object whenever a display card was included,
+    // so parsing failed and the raw JSON was spoken/shown. Spoken length is capped by the prompt.
+    max_tokens: 700,
+    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -55,14 +59,12 @@ export async function sendBrainMessage(
     const proxyUrl = getApiEndpoint("chat", settings);
     response = await fetch(proxyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await proxyHeaders(),
       body: JSON.stringify(requestBody),
     });
   }
 
-  if (!response.ok) throw new Error(`${isUsingOpenAI ? "OpenAI" : "Grok"} could not think right now (${response.status}).`);
+  if (!response.ok) throw await proxyError(response, `${isUsingOpenAI ? "OpenAI" : "Grok"} could not think right now`);
 
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content ?? "";
@@ -75,7 +77,7 @@ export async function normalizeBrainReply(
   tabs: GenericTab[] = [],
 ): Promise<BrainReply> {
   try {
-    const parsed = JSON.parse(stripCodeFence(content)) as Partial<BrainReply>;
+    const parsed = parseReplyJson(content);
     if (parsed.type === "browser_action" && parsed.action) {
       // Intercept switch_tab action for smart matching
       if (parsed.action.kind === "switch_tab") {
@@ -194,10 +196,39 @@ export async function normalizeBrainReply(
 
     return {
       type: "reply",
-      message: content || "I'm here.",
+      message: salvageMessage(content),
       requiresConfirmation: false,
     };
   }
+}
+
+function parseReplyJson(content: string): Partial<BrainReply> {
+  const cleaned = stripCodeFence(content);
+  try {
+    return JSON.parse(cleaned) as Partial<BrainReply>;
+  } catch {
+    // Models sometimes wrap the object in prose; parse the outermost {...}.
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first === -1 || last <= first) throw new Error("No JSON object in reply.");
+    return JSON.parse(cleaned.slice(first, last + 1)) as Partial<BrainReply>;
+  }
+}
+
+// Never show or speak raw JSON: pull the "message" field out of a malformed/truncated reply.
+function salvageMessage(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return "I'm here.";
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("```")) return trimmed;
+  const match = trimmed.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (match?.[1]) {
+    try {
+      return JSON.parse(`"${match[1]}"`) as string;
+    } catch {
+      return match[1].replace(/\\n/g, " ").replace(/\\"/g, '"');
+    }
+  }
+  return "Sorry, I lost my words for a second. Could you say that again?";
 }
 
 export function parseLocalCommand(text: string): BrowserAction | null {

@@ -24,6 +24,8 @@ Return ONLY valid JSON with shape: {
 }.
 
 Rules:
+- "message" is spoken aloud: keep it under 40 words, plain conversational text, no URLs, no markdown. Put lists, links, and details in "display.content" instead.
+- Today's date is ${new Date().toDateString()}.
 - If the user shares facts about themselves (like their name, preferences, or hobbies), summarize them in a single concise line in the "memoryUpdate" JSON property. E.g., "User's name is Aman. They live in SF." Otherwise, leave "memoryUpdate" empty or omit it.
 - If the user asks for facts, search, news, or weather, do NOT trigger a Google search browser action. Instead, read the injected "web search results" directly, reply verbally with type "reply", and populate the "display" object containing a beautifully formatted structured summary (e.g. weather forecast, headlines list).
   - For weather: Use kind "weather".

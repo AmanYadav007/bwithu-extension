@@ -1,5 +1,6 @@
 import type { BwithuSettings, RealtimeSecret } from "./types";
-import { getApiEndpoint, preferredAudioName } from "./utils";
+import { getApiEndpoint, preferredAudioName, resolveVoice } from "./utils";
+import { proxyError, proxyHeaders } from "./storage";
 
 export async function transcribeAudio(
   audio: number[],
@@ -49,13 +50,11 @@ export async function transcribeAudio(
     const proxyUrl = getApiEndpoint("transcribe", settings);
     const response = await fetch(proxyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await proxyHeaders(),
       body: JSON.stringify({ audio, mimeType }),
     });
 
-    if (!response.ok) throw new Error(`B could not transcribe that via proxy (${response.status}).`);
+    if (!response.ok) throw await proxyError(response, "B could not transcribe that via proxy");
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   }
@@ -75,7 +74,7 @@ export async function speakText(
       body: JSON.stringify({
         model: "tts-1",
         input: text,
-        voice: settings.voiceId || "coral",
+        voice: resolveVoice(settings, "openai"),
       }),
     });
 
@@ -92,7 +91,7 @@ export async function speakText(
       },
       body: JSON.stringify({
         text,
-        voice_id: settings.voiceId,
+        voice_id: resolveVoice(settings, "xai"),
         language: "auto",
       }),
     });
@@ -105,43 +104,43 @@ export async function speakText(
     const proxyUrl = getApiEndpoint("speak", settings);
     const response = await fetch(proxyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text, voiceId: settings.voiceId }),
+      headers: await proxyHeaders(),
+      body: JSON.stringify({ text, voiceId: resolveVoice(settings, "xai") }),
     });
 
-    if (!response.ok) throw new Error(`B could not speak right now via proxy (${response.status}).`);
+    if (!response.ok) throw await proxyError(response, "B could not speak right now via proxy");
     return response.json() as Promise<{ bytes: number[]; mimeType: string }>;
   }
 }
 
+export const OPENAI_REALTIME_MODEL = "gpt-realtime";
+
 export async function createRealtimeSecret(settings: BwithuSettings): Promise<RealtimeSecret> {
-  // OpenAI Realtime path — create ephemeral session key
+  // OpenAI Realtime (GA). The old beta /v1/realtime/sessions endpoint was shut down,
+  // which is why OpenAI live voice never connected.
   if (settings.openAiKey) {
-    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+    const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${settings.openAiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-realtime-2",
-        modalities: ["audio", "text"],
-        voice: settings.voiceId || "coral",
+        expires_after: { anchor: "created_at", seconds: 600 },
+        session: {
+          type: "realtime",
+          model: OPENAI_REALTIME_MODEL,
+          audio: { output: { voice: resolveVoice(settings, "openai") } },
+        },
       }),
     });
     if (!response.ok) {
-      throw new Error(`Could not start OpenAI voice session (${response.status}).`);
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Could not start OpenAI voice session (${response.status}). ${detail.slice(0, 200)}`);
     }
-    const data = (await response.json()) as {
-      value?: string;
-      expires_at?: number;
-      client_secret?: { value?: string; expires_at?: number };
-    };
-    const secret = data.client_secret ?? data;
-    if (!secret.value) throw new Error("OpenAI did not return a session token.");
-    return { value: secret.value, expires_at: secret.expires_at ?? 0 };
+    const data = (await response.json()) as { value?: string; expires_at?: number };
+    if (!data.value) throw new Error("OpenAI did not return a session token.");
+    return { value: data.value, expires_at: data.expires_at ?? 0 };
   }
 
   // Grok Realtime path
@@ -161,9 +160,7 @@ export async function createRealtimeSecret(settings: BwithuSettings): Promise<Re
     const proxyUrl = getApiEndpoint("realtime-secret", settings);
     response = await fetch(proxyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await proxyHeaders(),
       body: JSON.stringify({
         expires_after: { seconds: 300 },
       }),
@@ -172,7 +169,7 @@ export async function createRealtimeSecret(settings: BwithuSettings): Promise<Re
 
   if (!response.ok) {
     const name = settings.companionName || "B";
-    throw new Error(`${name} could not start realtime voice (${response.status}).`);
+    throw await proxyError(response, `${name} could not start realtime voice`);
   }
   return response.json() as Promise<RealtimeSecret>;
 }

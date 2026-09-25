@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   soundEnabled: true,
   voiceEnabled: true,
   wanderIntensity: "adventurous",
-  proxyUrl: "",
+  proxyUrl: "https://bwithu-extension.vercel.app",
   companionName: "",
   memory: "",
   onboardingCompleted: false,

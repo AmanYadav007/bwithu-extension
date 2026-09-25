@@ -1,9 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guard } from "./_guard";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  if (!(await guard(req, res, "search"))) return;
 
   const query = req.method === "POST" ? req.body?.query : req.query?.query;
   if (!query) {
@@ -41,19 +43,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const message = error instanceof Error ? error.message : "Internal Proxy Failure during Brave Search";
       return res.status(500).json({ error: message });
     }
-  } else {
-    // Fall back to DuckDuckGo Scraper (100% Free, No API Keys)
+  }
+
+  // Tavily has a free tier (1,000 searches/month) and works from serverless IPs.
+  const tavilyApiKey = process.env.TAVILY_API_KEY;
+  if (tavilyApiKey) {
     try {
-      const results = await scrapeDuckDuckGo(String(query));
-      return res.status(200).json({
-        web: {
-          results: results,
-        },
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tavilyApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query: String(query), max_results: 5, search_depth: "basic" }),
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "DuckDuckGo Scraper failed";
-      return res.status(500).json({ error: `Web search failed: ${message}` });
+      if (response.ok) {
+        const data = (await response.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
+        const results = (data.results ?? []).map((result) => ({
+          title: result.title ?? "",
+          url: result.url ?? "",
+          description: (result.content ?? "").slice(0, 450),
+        }));
+        return res.status(200).json({ web: { results } });
+      }
+    } catch {
+      // fall through to DuckDuckGo
     }
+  }
+
+  // Last resort: DuckDuckGo HTML scrape (free, but often 403s from Vercel IPs).
+  try {
+    const results = await scrapeDuckDuckGo(String(query));
+    return res.status(200).json({ web: { results } });
+  } catch {
+    // Return empty results rather than an error so B can still answer from what it knows.
+    return res.status(200).json({ web: { results: [] } });
   }
 }
 

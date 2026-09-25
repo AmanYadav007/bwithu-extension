@@ -1,5 +1,6 @@
 import type { BwithuSettings } from "./types";
-import { getApiEndpoint, stripHtml } from "./utils";
+import { DEFAULT_PROXY_URL, stripHtml } from "./utils";
+import { proxyError, proxyHeaders } from "./storage";
 
 export interface BraveSearchResult {
   title: string;
@@ -49,16 +50,15 @@ export async function braveSearch(query: string, settings: BwithuSettings): Prom
         age: result.age,
       }));
   } else {
-    const proxyUrl = getApiEndpoint("search", settings);
+    // Always the proxy: getApiEndpoint would return Brave's URL when an xAI key is set.
+    const proxyUrl = `${(settings.proxyUrl || DEFAULT_PROXY_URL).replace(/\/$/, "")}/api/search`;
     const response = await fetch(proxyUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: await proxyHeaders(),
       body: JSON.stringify({ query }),
     });
 
-    if (!response.ok) throw new Error(`Brave Search could not look that up via proxy (${response.status}).`);
+    if (!response.ok) throw await proxyError(response, "Search could not look that up via proxy");
     const data = (await response.json()) as {
       web?: {
         results?: Array<{
@@ -84,15 +84,11 @@ export async function braveSearch(query: string, settings: BwithuSettings): Prom
 }
 
 export async function collectWebContext(query: string, settings: BwithuSettings) {
-  if (!settings.braveApiKey && !settings.proxyUrl) {
-    return `Web search requested for "${query}", but no Brave Search API key is configured. Tell the user to add BRAVE_SEARCH_API_KEY in .env for local dev or paste it in B settings.`;
-  }
-
   try {
     const results = await braveSearch(query, settings);
     if (results.length === 0) return `Web search for "${query}" returned no useful results.`;
     return [
-      `Fresh web search results from Brave for "${query}":`,
+      `Fresh web search results for "${query}":`,
       ...results.map((result, index) => {
         const age = result.age ? ` (${result.age})` : "";
         return `${index + 1}. ${result.title}${age}\n${result.url}\n${result.description}`;

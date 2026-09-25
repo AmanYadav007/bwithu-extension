@@ -3,7 +3,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const envPath = path.join(root, ".env");
-const outPath = path.join(root, "public", "local-config.json");
+const outPath = path.join(root, "apps", "chrome-extension", "public", "local-config.json");
 
 if (!fs.existsSync(envPath)) {
   console.error("No .env file found.");

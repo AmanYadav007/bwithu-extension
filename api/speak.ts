@@ -1,9 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guard } from "./_guard";
+
+const XAI_VOICES = new Set(["ara", "eve", "rex", "sal", "leo"]);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  if (!(await guard(req, res, "speak"))) return;
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
@@ -21,6 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!text) {
       return res.status(400).json({ error: "Missing text parameter." });
     }
+    const voice = XAI_VOICES.has(String(voiceId).toLowerCase()) ? String(voiceId).toLowerCase() : "ara";
 
     const response = await fetch("https://api.x.ai/v1/tts", {
       method: "POST",
@@ -29,8 +34,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        text,
-        voice_id: voiceId || "ara",
+        text: text.slice(0, 1200),
+        voice_id: voice,
         language: "auto",
       }),
     });

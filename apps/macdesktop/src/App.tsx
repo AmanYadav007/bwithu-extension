@@ -334,10 +334,10 @@ export default function App() {
       ? `Hi. I'm ${settings.companionName}. This is my first day here.`
       : "Hi... I'm a little bear, but I don't have a name yet. What would you like to call me?";
     setSpeechText(introText);
-    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl)) {
+    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl || settings.openAiKey)) {
       void playVoiceReply(introText);
     }
-  }, [playVoiceReply, settings.apiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled, settings.companionName]);
+  }, [playVoiceReply, settings.apiKey, settings.openAiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled, settings.companionName]);
 
   const handleIntroComplete = useCallback(() => {
     if (introFinishedRef.current) return;
@@ -460,8 +460,10 @@ export default function App() {
           window.setTimeout(handleVoiceAudioEnded, 2000);
         }
       } catch (error) {
-        setStatus("I had trouble with that. Let's try again in a bit!");
-        setSpeechText("Let me look at that again.");
+        const errMessage = error instanceof Error ? error.message : "";
+        const isQuota = errMessage.includes("Daily limit") || errMessage.includes("Slow down");
+        setStatus(isQuota ? errMessage : "I had trouble with that. Let's try again in a bit!");
+        setSpeechText(isQuota ? errMessage : "Let me look at that again.");
         setBearState("curious");
       }
     },
@@ -471,7 +473,6 @@ export default function App() {
   const stopRecording = useCallback(() => {
     setVoiceDialogueActive(false);
     if (realtimeVoiceRef.current) {
-      realtimeVoiceRef.current.stop(true);
       realtimeVoiceRef.current.close();
       realtimeVoiceRef.current = null;
       setIsRecording(false);
@@ -613,6 +614,12 @@ export default function App() {
             setBearState("listen");
             setLiveCaption("");
             setAssistantCaption("");
+          } else if (lowered.includes("call ended")) {
+            realtimeVoiceRef.current?.close();
+            realtimeVoiceRef.current = null;
+            setIsRecording(false);
+            setVoiceDialogueActive(false);
+            setBearState("idle");
           } else if (lowered.includes("thinking") || lowered.includes("connecting")) {
             setBearState("think");
           } else if (lowered.includes("answering") || lowered.includes("speaking")) {

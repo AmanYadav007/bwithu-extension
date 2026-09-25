@@ -6,13 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:local": "npm run seed:key && npm run build",
+    "build": "tsc -b && vite build && vite build -c vite.content.config.ts",
+    "build:local": "npm run seed:key && BWITHU_LOCAL_KEYS=1 npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
     "seed:key": "node ../../scripts/write-local-config.cjs",
     "serve": "vite preview --port 3000",
-    "zip": "npm run build && zip -r bwithu-extension.zip dist"
+    "zip": "npm run build && rm -f bwithu-extension.zip && cd dist && zip -qr ../bwithu-extension.zip . -x local-config.json"
   },
   "dependencies": {
     "@bwithu/shared": "*",

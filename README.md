@@ -12,25 +12,33 @@ npm run build
 
 Load the built extension from `dist` in `chrome://extensions` with Developer Mode enabled.
 
+## Proxy (Vercel) environment
+
+Users never enter keys: the extension and desktop apps call the proxy in `api/`, which holds them.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `XAI_API_KEY` | yes | Chat, live voice, TTS, STT (console.x.ai) |
+| `TAVILY_API_KEY` | recommended | Web search, free 1,000/month (tavily.com) |
+| `BRAVE_SEARCH_API_KEY` | optional | Alternative web search |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | before launch | Global daily quotas (upstash.com, free tier) |
+| `ALLOWED_ORIGINS` | after publishing | e.g. `chrome-extension://<extension-id>` |
+| `DAILY_LIMIT_CHAT` / `_VOICE` / `_SPEAK` / `_TRANSCRIBE` / `_SEARCH` | optional | Override per-install daily limits (defaults 300 / 15 / 300 / 200 / 100) |
+
+Live voice calls are capped at 10 minutes each.
+
 ## Local Keys
 
-For local development, create `.env` and run:
+`npm run build` never ships private keys. For local testing with your own keys, create a repo-root `.env` and run `npm run build:local` in `apps/chrome-extension`. If `OPENAI_API_KEY` is set, the app talks to OpenAI directly instead of the proxy.
+
+## Publishing
 
 ```bash
-npm run build:local
+npm run build:shared
+cd apps/chrome-extension && npm run zip   # -> bwithu-extension.zip, manifest at the root
 ```
 
-Supported variables:
-
-```bash
-OPENAI_API_KEY=sk-...
-XAI_API_KEY=xai-...
-BRAVE_SEARCH_API_KEY=...
-BWITHU_PROXY_URL=https://...
-GOOGLE_CLIENT_ID=...
-```
-
-`OPENAI_API_KEY` is the recommended path for realtime voice. Production builds strip private keys from `dist/local-config.json`; use a proxy URL for distributable builds.
+Privacy policy: `https://bwithu-extension.vercel.app/privacy.html` (source: `apps/chrome-extension/public/privacy.html`).
 
 ## Character Pipeline
 

@@ -28,7 +28,7 @@ interface ChromeExtensionApi {
   runtime: {
     onMessage: {
       addListener: (
-        callback: (message: any, sender: unknown, sendResponse: (response: any) => void) => true | void,
+        callback: (message: RuntimeMessage, sender: unknown, sendResponse: (response: unknown) => void) => true | void,
       ) => void;
     };
     onInstalled?: {
@@ -48,6 +48,15 @@ interface ChromeExtensionApi {
     setPanelBehavior: (behavior: { openPanelOnActionClick: boolean }) => Promise<void>;
   };
 }
+
+// Settings sent by the panel are ignored; the worker always reloads them from storage.
+type RuntimeMessage =
+  | { type: "BWITHU_BRAIN_TEXT"; text: string; history: ConversationTurn[]; pageContext?: string }
+  | { type: "BWITHU_TRANSCRIBE_AUDIO"; audio: number[]; mimeType: string }
+  | { type: "BWITHU_SPEAK_TEXT"; text: string }
+  | { type: "BWITHU_RUN_BROWSER_ACTION"; action: BrowserAction }
+  | { type: "BWITHU_CREATE_REALTIME_SECRET" }
+  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string };
 
 const chromeApi = (globalThis as unknown as { chrome: ChromeExtensionApi }).chrome;
 
@@ -73,18 +82,18 @@ chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-async function handleMessage(message: any) {
+async function handleMessage(message: RuntimeMessage) {
   switch (message.type) {
     case "BWITHU_BRAIN_TEXT":
-      return sendBrainMessage(message.text, message.settings, message.history, message.pageContext ?? "");
+      return sendBrainMessage(message.text, message.history, message.pageContext ?? "");
     case "BWITHU_TRANSCRIBE_AUDIO":
-      return transcribeAudio(message.audio, message.mimeType, message.settings);
+      return transcribeAudio(message.audio, message.mimeType);
     case "BWITHU_SPEAK_TEXT":
-      return speakText(message.text, message.settings);
+      return speakText(message.text);
     case "BWITHU_RUN_BROWSER_ACTION":
       return runBrowserAction(message.action);
     case "BWITHU_CREATE_REALTIME_SECRET":
-      return createRealtimeSecret(message.settings);
+      return createRealtimeSecret();
     case "BWITHU_GET_BROWSER_CONTEXT":
       return collectBrowserContext(message.currentPageContext);
     default:
@@ -94,7 +103,6 @@ async function handleMessage(message: any) {
 
 async function sendBrainMessage(
   text: string,
-  _settings: BwithuSettings,
   history: ConversationTurn[],
   pageContext: string,
 ): Promise<BrainReply> {
@@ -109,19 +117,19 @@ async function sendBrainMessage(
   return sharedSendBrainMessage(text, storedSettings, history, browserContext, webContext, tabs);
 }
 
-async function transcribeAudio(audio: number[], mimeType: string, _settings: BwithuSettings) {
+async function transcribeAudio(audio: number[], mimeType: string) {
   const storedSettings = await loadSettings();
   assertApiKey(storedSettings);
   return sharedTranscribeAudio(audio, mimeType, storedSettings);
 }
 
-async function speakText(text: string, _settings: BwithuSettings) {
+async function speakText(text: string) {
   const storedSettings = await loadSettings();
   assertApiKey(storedSettings);
   return sharedSpeakText(text, storedSettings);
 }
 
-async function createRealtimeSecret(_settings: BwithuSettings) {
+async function createRealtimeSecret() {
   const storedSettings = await loadSettings();
   if (!storedSettings.openAiKey) {
     assertApiKey(storedSettings);

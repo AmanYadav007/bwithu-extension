@@ -1,9 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guard } from "./_guard";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+  if (!(await guard(req, res, "chat"))) return;
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
@@ -23,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(sanitizeChatBody(req.body)),
     });
 
     if (!response.ok) {
@@ -40,4 +42,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error instanceof Error ? error.message : "Internal Proxy Failure";
     return res.status(500).json({ error: message });
   }
+}
+
+const ALLOWED_MODELS = new Set(["grok-4.3", "grok-4-fast-non-reasoning", "grok-3-mini"]);
+
+// Don't let the public proxy be used as a free, unlimited Grok endpoint.
+function sanitizeChatBody(body: Record<string, unknown> = {}) {
+  const model = typeof body.model === "string" && ALLOWED_MODELS.has(body.model) ? body.model : "grok-4.3";
+  const maxTokens = Math.min(Number(body.max_tokens) || 700, 900);
+  const messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
+  return { ...body, model, max_tokens: maxTokens, messages, stream: false, n: 1 };
 }

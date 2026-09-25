@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "./types";
 const SETTINGS_KEY = "bwithu.settings";
 const POSITION_KEY = "bwithu.bearPosition";
 const MESSAGES_KEY = "bwithu.messages";
+const INSTALL_ID_KEY = "bwithu.installId";
 
 interface ChromeLike {
   storage?: {
@@ -86,6 +87,7 @@ function withoutBlankProviderKeys(settings?: Partial<BwithuSettings>): Partial<B
   if (!next.openAiKey) delete next.openAiKey;
   if (!next.braveApiKey) delete next.braveApiKey;
   if (!next.googleClientId) delete next.googleClientId;
+  if (!next.proxyUrl) delete next.proxyUrl;
   return next;
 }
 
@@ -120,13 +122,13 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
       googleClientId?: string;
       proxyUrl?: string;
     };
-    return {
+    return withoutBlankProviderKeys({
       apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
       openAiKey: config.openAiKey ?? config.OPENAI_API_KEY ?? "",
       braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
       googleClientId: config.googleClientId ?? config.GOOGLE_CLIENT_ID ?? "",
       proxyUrl: config.proxyUrl ?? config.BWITHU_PROXY_URL ?? "",
-    };
+    });
   } catch {
     return {};
   }
@@ -138,4 +140,34 @@ export async function loadMessages(): Promise<ConversationTurn[]> {
 
 export async function saveMessages(messages: ConversationTurn[]) {
   await setStored(MESSAGES_KEY, messages);
+}
+
+let installIdPromise: Promise<string> | null = null;
+
+/** Random per-install id used by the proxy for daily quotas. Not tied to any personal data. */
+export function getInstallId(): Promise<string> {
+  installIdPromise ??= (async () => {
+    const existing = await getStored<string>(INSTALL_ID_KEY);
+    if (existing) return existing;
+    const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    await setStored(INSTALL_ID_KEY, id);
+    return id;
+  })();
+  return installIdPromise;
+}
+
+export async function proxyHeaders(): Promise<Record<string, string>> {
+  return {
+    "Content-Type": "application/json",
+    "X-BwithU-Install": await getInstallId().catch(() => ""),
+  };
+}
+
+/** Error carrying the proxy's own message for quota (429) responses, a generic one otherwise. */
+export async function proxyError(response: Response, fallback: string): Promise<Error> {
+  if (response.status === 429) {
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    return new Error(data.error || "Daily limit reached. B will be back tomorrow!");
+  }
+  return new Error(`${fallback} (${response.status}).`);
 }

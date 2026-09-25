@@ -27,9 +27,12 @@ export default defineConfig({
             delete config.openAiKey;
             delete config.braveApiKey;
 
-            // If a local .env exists, merge those keys back in for local development/testing
-            if (existsSync('.env')) {
-              const env = readFileSync('.env', 'utf8');
+            // Only `npm run build:local` (BWITHU_LOCAL_KEYS=1) re-adds keys from the repo-root .env.
+            // A plain `npm run build` must never ship private keys in the extension package.
+            const envPath = resolve(__dirname, '../../.env')
+            const includeLocalKeys = process.env.BWITHU_LOCAL_KEYS === '1' && existsSync(envPath)
+            if (includeLocalKeys) {
+              const env = readFileSync(envPath, 'utf8');
               const xaiMatch = env.match(/^XAI_API_KEY=(.+)$/m);
               const openAiMatch = env.match(/^OPENAI_API_KEY=(.+)$/m);
               const braveMatch = env.match(/^(?:BRAVE_SEARCH_API_KEY|BRAVE_API_KEY)=(.+)$/m);
@@ -44,7 +47,7 @@ export default defineConfig({
             }
 
             writeFileSync('dist/local-config.json', JSON.stringify(config, null, 2) + '\n');
-            if (existsSync('.env')) {
+            if (includeLocalKeys) {
               console.log('Maintained local development keys in build local-config.json.');
             } else {
               console.log('Stripped secret keys from build local-config.json while keeping public proxy URL.');
@@ -68,7 +71,6 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'index.html'),
         permissions: resolve(__dirname, 'permissions.html'),
-        content: resolve(__dirname, 'src/content.tsx'),
         background: resolve(__dirname, 'src/background.ts'),
       },
       output: {
