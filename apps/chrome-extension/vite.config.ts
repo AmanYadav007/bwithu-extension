@@ -61,6 +61,17 @@ export default defineConfig({
             }
           }
         }
+
+        // `npm run build:dev-proxy`: point the extension at a local proxy (no keys shipped).
+        const devProxy = process.env.BWITHU_DEV_PROXY
+        if (devProxy) {
+          writeFileSync('dist/local-config.json', JSON.stringify({ BWITHU_PROXY_URL: devProxy, BWITHU_FORCE_PROXY: true }, null, 2) + '\n')
+          const manifest = JSON.parse(readFileSync('dist/manifest.json', 'utf8'))
+          const csp = manifest.content_security_policy
+          csp.extension_pages = csp.extension_pages.replace('connect-src', `connect-src ${devProxy}`)
+          writeFileSync('dist/manifest.json', JSON.stringify(manifest, null, 2) + '\n')
+          console.log(`Dev build: using local proxy ${devProxy}`)
+        }
       }
     }
   ],

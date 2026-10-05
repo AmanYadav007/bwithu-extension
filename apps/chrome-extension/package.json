@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && vite build -c vite.content.config.ts",
     "build:local": "npm run seed:key && BWITHU_LOCAL_KEYS=1 npm run build",
+    "build:dev-proxy": "BWITHU_DEV_PROXY=http://localhost:${PORT:-8787} npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
     "seed:key": "node ../../scripts/write-local-config.cjs",

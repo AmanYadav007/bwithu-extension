@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const chrome: any;
-import { Bear, PixelPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
+import { Bear, CompanionPicker, PIXEL_COMPANIONS, PixelPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
 import {
   useBearStore,
   nextBehaviorState,
@@ -14,7 +14,7 @@ import {
   resetBearPosition,
   DEFAULT_SETTINGS,
 } from "@bwithu/shared";
-import type { BearState, BehaviorEvent, BrowserAction, BrainReply, ConversationTurn, BwithuSettings } from "@bwithu/shared";
+import type { BearState, BehaviorEvent, BrowserAction, BrainReply, CompanionAvatar, ConversationTurn, BwithuSettings } from "@bwithu/shared";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { getActivePageContext } from "./pageContext";
 
@@ -103,9 +103,9 @@ function cleanLiveCaption(text: string): string {
 }
 
 function callStateLabel(state: BearState, status: string, isRecording: boolean) {
-  if (isRecording || state === "listen") return "Listening...";
-  if (state === "think") return "Thinking...";
   if (state === "talk" || status.toLowerCase().includes("answering")) return "Speaking...";
+  if (state === "think") return "Thinking...";
+  if (isRecording || state === "listen") return "Listening...";
   if (state === "searching" || status.toLowerCase().includes("search")) return "Searching...";
   return "Ready";
 }
@@ -120,6 +120,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [showIntro, setShowIntro] = useState(false);
   const [speechText, setSpeechText] = useState("");
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [panelSettingsOpen, setPanelSettingsOpen] = useState(false);
   const [callDraft, setCallDraft] = useState("");
@@ -183,6 +184,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       if (!cancelled) {
         setSettings(nextSettings);
         setMessages(nextMessages);
+        setSettingsReady(true);
         if (nextSettings.onboardingCompleted === false) {
           setShowChatPanel(true);
         }
@@ -342,6 +344,18 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     bearStateRef.current = bearState;
   }, [bearState]);
 
+  // Mirror B's state to the floating orb on web pages (it listens to storage changes).
+  useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
+    void chrome.storage.local.set({ "bwithu.liveState": bearState });
+  }, [bearState]);
+  useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
+    const reset = () => void chrome.storage.local.set({ "bwithu.liveState": "idle" });
+    window.addEventListener("pagehide", reset);
+    return () => window.removeEventListener("pagehide", reset);
+  }, []);
+
   useEffect(() => {
     function reactToScroll() {
       if (bearStateRef.current !== "hidden") {
@@ -381,12 +395,17 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       const url = URL.createObjectURL(blob);
       audioRef.current?.pause();
       audioRef.current = new Audio(url);
-      audioRef.current.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+      audioRef.current.addEventListener("ended", () => {
+        URL.revokeObjectURL(url);
+        setBearState((current) => (current === "talk" ? "idle" : current));
+      }, { once: true });
       await audioRef.current.play();
+      clearStateTimer();
+      setBearState("talk");
     } catch {
-      setStatus("B could not speak this time, but he heard you.");
+      setStatus(`${settings.companionName || "B"} could not speak this time, but heard you.`);
     }
-  }, [settings]);
+  }, [clearStateTimer, settings]);
 
   const handleSpawnComplete = useCallback(() => {
     setBearState("intro");
@@ -395,7 +414,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     
     const introText = settings.companionName
       ? `Hi. I'm ${settings.companionName}. This is my first day here.`
-      : "Hi... I'm a little bear, but I don't have a name yet. What would you like to call me?";
+      : "Hi! I don't have a name yet. What would you like to call me?";
     setSpeechText(introText);
     
     if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl || settings.openAiKey)) {
@@ -533,12 +552,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
         // PRE-FETCH VOICE FOR SEAMLESS SYNC
         let voiceBlobUrl: string | null = null;
+        let voiceError = "";
         if (settings.voiceEnabled) {
           try {
             const blob = await speakText(assistantMessage, settings);
             voiceBlobUrl = URL.createObjectURL(blob);
-          } catch {
-            // silent fallback
+          } catch (error) {
+            voiceError = error instanceof Error ? error.message : "voice request failed";
+            console.error("[BwithU] Spoken reply failed:", error);
           }
         }
 
@@ -553,7 +574,13 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         }
 
         setPendingAction(reply.type === "browser_action" && reply.action && reply.requiresConfirmation ? reply.action : null);
-        setStatus(reply.requiresConfirmation ? "B needs your confirmation." : "");
+        setStatus(
+          reply.requiresConfirmation
+            ? "B needs your confirmation."
+            : voiceError
+              ? `I couldn't speak that out loud (${voiceError}).`
+              : "",
+        );
         dispatchBehavior(needsSearch ? "searchEnded" : "messageEnded");
         if (settings.soundEnabled) playHappyChirp();
 
@@ -563,9 +590,18 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           audioRef.current = new Audio(voiceBlobUrl);
           audioRef.current.addEventListener("ended", () => {
             URL.revokeObjectURL(voiceBlobUrl!);
+            setBearState((current) => (current === "talk" ? "idle" : current));
             handleVoiceAudioEnded();
           }, { once: true });
-          await audioRef.current.play();
+          try {
+            await audioRef.current.play();
+            clearStateTimer();
+            setBearState("talk");
+          } catch (error) {
+            console.error("[BwithU] Audio playback blocked:", error);
+            setStatus("Chrome blocked my voice. Click anywhere in this panel, then try again.");
+            window.setTimeout(handleVoiceAudioEnded, 2000);
+          }
         } else {
           // If no audio, trigger ended loop directly after a brief timeout
           window.setTimeout(handleVoiceAudioEnded, 2000);
@@ -591,7 +627,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setBearState("curious");
       }
     },
-    [dispatchBehavior, messages, settings, handleVoiceAudioEnded, playVoiceReply, runCommandDiagnostics],
+    [clearStateTimer, dispatchBehavior, messages, settings, handleVoiceAudioEnded, playVoiceReply, runCommandDiagnostics],
   );
 
   const stopRecording = useCallback(() => {
@@ -665,12 +701,49 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
+
+      // End the turn automatically after ~1.3s of silence, like a phone call, instead of
+      // waiting for a second tap. Gives up after 12s of no speech or 30s total.
+      const vadContext = new AudioContext();
+      const analyser = vadContext.createAnalyser();
+      analyser.fftSize = 1024;
+      vadContext.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      const startedAt = Date.now();
+      let lastVoiceAt = startedAt;
+      let heardSpeech = false;
+      const vadTimer = window.setInterval(() => {
+        if (recorder.state === "inactive") return;
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += sample * sample;
+        const now = Date.now();
+        if (Math.sqrt(sum / samples.length) > 0.015) {
+          heardSpeech = true;
+          lastVoiceAt = now;
+        }
+        const turnDone = heardSpeech && now - lastVoiceAt > 1300;
+        if (turnDone || now - startedAt > 30000 || (!heardSpeech && now - startedAt > 12000)) {
+          recognitionRef.current?.stop();
+          recorder.stop();
+        }
+      }, 100);
+
       recorder.onstop = () => {
+        window.clearInterval(vadTimer);
+        void vadContext.close();
         stream.getTracks().forEach((track) => track.stop());
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         const caption = finalTranscriptRef.current.trim();
         setIsRecording(false);
         dispatchBehavior("voiceEnded");
+
+        if (!heardSpeech && !caption) {
+          setVoiceDialogueActive(false);
+          setStatus("");
+          setSpeechText("I didn't hear anything. Tap the mic when you want to talk.");
+          return;
+        }
 
         if (caption) {
           setStatus("B heard you.");
@@ -738,21 +811,26 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           setSpeechText(text || "...");
         },
         onAssistantDone: (text) => {
+          clearStateTimer();
           setBearState("talk");
           if (text) {
             setMessages((current) => [...current, { role: "assistant" as const, content: text }].slice(-8));
             setAssistantCaption(text);
             setSpeechText(text);
           }
-          if (settings.soundEnabled) playHappyChirp();
-          dispatchBehavior("messageEnded");
+          // The transcript finishes long before the streamed audio does; keep talking until it has played.
+          const speakingMs = realtimeVoiceRef.current?.playbackRemainingMs() ?? 0;
           window.setTimeout(() => {
+            if (settings.soundEnabled) playHappyChirp();
+            dispatchMoodEvent("messageEnded");
             if (realtimeVoiceRef.current) {
               setStatus("Listening live...");
               setBearState("listen");
               dispatchBehavior("voiceStarted");
+            } else {
+              setBearState("idle");
             }
-          }, 450);
+          }, speakingMs + 450);
         },
         onStatus: (nextStatus) => {
           setStatus(nextStatus);
@@ -781,11 +859,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       realtimeVoiceRef.current?.close();
       realtimeVoiceRef.current = null;
       const message = error instanceof Error ? error.message : "Live voice fell back to normal voice.";
+      console.error("[BwithU] Live voice unavailable, using backup mic:", error);
       setSpeechText(message.includes("API key") ? "I need my voice key first." : "Trying the backup mic...");
-      setStatus(message);
       await startLegacyRecording();
+      setStatus(`Live voice unavailable (${message}). Using backup mic.`);
     }
-  }, [dispatchBehavior, isRecording, requestMicrophoneAccess, settings, startLegacyRecording]);
+  }, [clearStateTimer, dispatchBehavior, dispatchMoodEvent, isRecording, requestMicrophoneAccess, settings, startLegacyRecording]);
 
   const handleMicButtonClick = useCallback(() => {
     console.log("Mic button clicked");
@@ -848,8 +927,25 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     void handleSendMessage(text);
   }, [handleSendMessage]);
 
+  const chooseCompanion = useCallback((avatar: CompanionAvatar) => {
+    const nextSettings = { ...settings, companionAvatar: avatar, voiceId: PIXEL_COMPANIONS[avatar].voiceId };
+    setSettings(nextSettings);
+    void saveSettings(nextSettings);
+    setBearState("spawning");
+    if (settings.soundEnabled) playSpawnChime();
+    if (!settings.onboardingCompleted) setShowChatPanel(true);
+  }, [settings]);
+
+  if (!settingsReady || !settings.companionAvatar) {
+    return (
+      <div className="bwithu-sidepanel-layout bwithu-pixel-world bwithu-pixel-world--picker">
+        {settingsReady && <CompanionPicker onChoose={chooseCompanion} />}
+      </div>
+    );
+  }
+
   return (
-    <div className="bwithu-sidepanel-layout">
+    <div className="bwithu-sidepanel-layout bwithu-pixel-world">
       <header className="bwithu-call-header">
         <div>
           <span className="bwithu-call-header__eyebrow">BwithU</span>
@@ -892,7 +988,10 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           />
         )}
         {!showChatPanel && (latestAssistantMessage || latestUserMessage) && (
-          <div className="bwithu-conversation-strip" aria-live="polite">
+          <div
+            className={`bwithu-conversation-strip${activeDisplay || pendingAction ? " bwithu-conversation-strip--with-card" : ""}`}
+            aria-live="polite"
+          >
             {latestUserMessage && (
               <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
                 {latestUserMessage}

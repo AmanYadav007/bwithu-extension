@@ -72,12 +72,24 @@ async function removeStored(key: string) {
 
 export async function loadSettings(): Promise<BwithuSettings> {
   const saved = await getStored<Partial<BwithuSettings>>(SETTINGS_KEY);
-  const localConfig = await loadLocalConfig();
-  return { ...DEFAULT_SETTINGS, ...localConfig, ...withoutBlankProviderKeys(saved) };
+  const { forceProxy, ...localConfig } = await loadLocalConfig();
+  const settings = { ...DEFAULT_SETTINGS, ...localConfig, ...withoutBlankProviderKeys(saved) };
+  // Dev builds pinned to a local proxy must win over a proxy URL saved by an earlier install.
+  if (forceProxy && localConfig.proxyUrl) settings.proxyUrl = localConfig.proxyUrl;
+  return settings;
 }
 
+const PROVIDER_KEYS = ["apiKey", "openAiKey", "braveApiKey", "proxyUrl"] as const;
+
 export async function saveSettings(settings: BwithuSettings) {
-  await setStored(SETTINGS_KEY, settings);
+  // Never persist keys/proxy that came from a build's local-config.json: once saved they would
+  // override every later build (e.g. an old OpenAI key silently bypassing the proxy).
+  const localConfig = await loadLocalConfig();
+  const next: Partial<BwithuSettings> = { ...settings };
+  for (const key of PROVIDER_KEYS) {
+    if (next[key] && next[key] === localConfig[key]) delete next[key];
+  }
+  await setStored(SETTINGS_KEY, next);
 }
 
 function withoutBlankProviderKeys(settings?: Partial<BwithuSettings>): Partial<BwithuSettings> {
@@ -103,7 +115,7 @@ export async function resetBearPosition() {
   await removeStored(POSITION_KEY);
 }
 
-async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
+async function loadLocalConfig(): Promise<Partial<BwithuSettings> & { forceProxy?: boolean }> {
   try {
     const url = (globalThis as { chrome?: { runtime?: { getURL?: (path: string) => string } } }).chrome?.runtime?.getURL?.("local-config.json");
     if (!url) return {};
@@ -116,19 +128,21 @@ async function loadLocalConfig(): Promise<Partial<BwithuSettings>> {
       BRAVE_API_KEY?: string;
       GOOGLE_CLIENT_ID?: string;
       BWITHU_PROXY_URL?: string;
+      BWITHU_FORCE_PROXY?: boolean;
       apiKey?: string;
       openAiKey?: string;
       braveApiKey?: string;
       googleClientId?: string;
       proxyUrl?: string;
     };
-    return withoutBlankProviderKeys({
+    const settings = withoutBlankProviderKeys({
       apiKey: config.apiKey ?? config.XAI_API_KEY ?? "",
       openAiKey: config.openAiKey ?? config.OPENAI_API_KEY ?? "",
       braveApiKey: config.braveApiKey ?? config.BRAVE_SEARCH_API_KEY ?? config.BRAVE_API_KEY ?? "",
       googleClientId: config.googleClientId ?? config.GOOGLE_CLIENT_ID ?? "",
       proxyUrl: config.proxyUrl ?? config.BWITHU_PROXY_URL ?? "",
     });
+    return { ...settings, forceProxy: config.BWITHU_FORCE_PROXY === true };
   } catch {
     return {};
   }

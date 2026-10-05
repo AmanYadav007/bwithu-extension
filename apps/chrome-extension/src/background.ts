@@ -46,6 +46,7 @@ interface ChromeExtensionApi {
   };
   sidePanel?: {
     setPanelBehavior: (behavior: { openPanelOnActionClick: boolean }) => Promise<void>;
+    open: (options: { windowId: number }) => Promise<void>;
   };
 }
 
@@ -56,7 +57,8 @@ type RuntimeMessage =
   | { type: "BWITHU_SPEAK_TEXT"; text: string }
   | { type: "BWITHU_RUN_BROWSER_ACTION"; action: BrowserAction }
   | { type: "BWITHU_CREATE_REALTIME_SECRET" }
-  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string };
+  | { type: "BWITHU_GET_BROWSER_CONTEXT"; currentPageContext: string }
+  | { type: "BWITHU_OPEN_PANEL" };
 
 const chromeApi = (globalThis as unknown as { chrome: ChromeExtensionApi }).chrome;
 
@@ -74,7 +76,18 @@ chromeApi.runtime.onInstalled?.addListener(() => {
   }
 });
 
-chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chromeApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "BWITHU_OPEN_PANEL") {
+    // Must run synchronously inside the click's user gesture, so no awaits before open().
+    const windowId = (sender as { tab?: ChromeTab }).tab?.windowId;
+    if (windowId === undefined || !chromeApi.sidePanel?.open) return;
+    chromeApi.sidePanel
+      .open({ windowId })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   handleMessage(message)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "B hit a browser snag." }));

@@ -33,7 +33,8 @@ export default function InfoDisplay({
 
   // Subtle typewriter line-by-line entry for high-tech HUD effect
   useEffect(() => {
-    const rawLines = content
+    // The model sometimes sends a display card without content.
+    const rawLines = (content ?? "")
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
