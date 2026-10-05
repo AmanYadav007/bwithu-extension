@@ -7,6 +7,9 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run build:shared && npm run build:dev-proxy -w apps/chrome-extension && npm run dev:proxy",
+    "build": "npm run build:chrome",
+    "dev:proxy": "npx -y tsx scripts/dev-proxy.ts",
     "build:shared": "npm run build -w packages/shared && npm run build -w packages/ui",
     "dev:chrome": "npm run dev -w apps/chrome-extension",
     "build:chrome": "npm run build:shared && npm run build -w apps/chrome-extension",

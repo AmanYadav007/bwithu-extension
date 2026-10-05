@@ -2,9 +2,12 @@ import { animate, motion, useMotionValue, AnimatePresence } from "framer-motion"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import GLBCharacter from "./GLBCharacter";
+import OrbCharacter from "./OrbCharacter";
+import { FittedPixelCompanion } from "./PixelCompanion";
 import SpritePlayer from "./SpritePlayer";
 import SpeechBubble from "./SpeechBubble";
 import InfoDisplay from "./InfoDisplay";
+import PixelDisplay from "./PixelDisplay";
 import { animationConfigs, INTRO_TEXT } from "@bwithu/shared";
 import type { BearState, BearMood, BearPosition, BwithuSettings, BrowserAction } from "@bwithu/shared";
 import { loadBearPosition, saveBearPosition } from "@bwithu/shared";
@@ -151,7 +154,8 @@ export default function Bear({
   const [reactions, setReactions] = useState<{ id: number; char: string; x: number }[]>([]);
   const hasDraggedRef = useRef(false);
   const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const useGlbRenderer = settings.characterRenderer === "glb" && !glbUnavailable;
+  const pixelAvatar = settings.companionAvatar;
+  const useGlbRenderer = !pixelAvatar && settings.characterRenderer === "glb" && !glbUnavailable;
 
   const triggerReaction = useCallback((char: string) => {
     const id = Date.now() + Math.random();
@@ -296,8 +300,8 @@ export default function Bear({
         left: isSidePanel ? "auto" : 0,
         top: isSidePanel ? "auto" : 0,
         margin: isSidePanel ? "0 auto" : undefined,
-        width: isSidePanel ? panelSize : SIZE,
-        height: isSidePanel ? panelSize : SIZE,
+        width: isSidePanel ? (pixelAvatar ? "100%" : panelSize) : SIZE,
+        height: isSidePanel ? (pixelAvatar ? "100%" : panelSize) : SIZE,
         cursor: isSidePanel ? "default" : "grab",
         pointerEvents: "auto",
         userSelect: "none",
@@ -306,8 +310,9 @@ export default function Bear({
       }}
     >
       <motion.div
-        className={["bwithu-bear-stage", `bwithu-bear-stage--${state}`, `bwithu-bear-stage--mood-${mood}`].join(" ")}
-        animate={{
+        className={["bwithu-bear-stage", `bwithu-bear-stage--${state}`, `bwithu-bear-stage--mood-${mood}`, pixelAvatar ? "bwithu-bear-stage--pixel" : ""].join(" ")}
+        // Pixel art moves in whole-pixel steps inside PixelCompanion; rotating or squashing it here would blur it.
+        animate={pixelAvatar ? { y: 0, rotate: 0, scaleX: 1, scaleY: 1 } : {
           y: state === "idle" || state === "curious" || state === "sleep" || state === "sleepy" ? [0, -5, 0] : 0,
           rotate:
             state === "idle"
@@ -406,6 +411,19 @@ export default function Bear({
 
           if (!activeDisplay) return null;
 
+          if (pixelAvatar) {
+            return (
+              <PixelDisplay
+                key={activeDisplay.content}
+                display={activeDisplay}
+                onClose={onCloseDisplay || (() => {})}
+                onConfirmAction={onConfirmAction}
+                onCancelAction={onCancelAction}
+                onSelectTab={onSelectTab}
+              />
+            );
+          }
+
           return (
             <InfoDisplay
               key={activeDisplay.content}
@@ -419,7 +437,17 @@ export default function Bear({
           );
         })()}
         {controls}
-        {useGlbRenderer ? (
+        {pixelAvatar ? (
+          <FittedPixelCompanion
+            avatar={pixelAvatar}
+            state={animationState}
+            mood={mood}
+            speechText={speechText}
+            lookAtDisplay={Boolean(display || pendingAction)}
+          />
+        ) : settings.characterRenderer === "orb" ? (
+          <OrbCharacter state={animationState} size={isSidePanel ? panelSize : SIZE} />
+        ) : useGlbRenderer ? (
           <GLBCharacter
             modelSrc={resolveAsset(settings.characterModelUrl || "result.glb")}
             state={animationState}

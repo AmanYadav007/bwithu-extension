@@ -90,6 +90,12 @@ export class RealtimeVoiceSession {
     this.callbacks.onStatus("Stopped.");
   }
 
+  /** Milliseconds of reply audio still queued to play; replies stream in faster than they play. */
+  playbackRemainingMs() {
+    if (!this.playbackContext) return 0;
+    return Math.max(0, (this.playTime - this.playbackContext.currentTime) * 1000);
+  }
+
   close() {
     if (this.sessionLimitTimer) {
       clearTimeout(this.sessionLimitTimer);

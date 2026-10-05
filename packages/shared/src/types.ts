@@ -3,12 +3,16 @@ export interface BearPosition {
   y: number;
 }
 
+export type CompanionAvatar = "male" | "female";
+
 export interface BwithuSettings {
   apiKey: string;
   openAiKey: string;
   braveApiKey: string;
   googleClientId: string;
-  characterRenderer: "glb" | "sprite";
+  characterRenderer: "orb" | "glb" | "sprite";
+  /** Show the small floating orb on web pages. */
+  floatingOrb: boolean;
   characterModelUrl: string;
   voiceId: string;
   soundEnabled: boolean;
@@ -16,6 +20,8 @@ export interface BwithuSettings {
   wanderIntensity: "calm" | "curious" | "adventurous";
   proxyUrl?: string;
   companionName?: string;
+  /** Pixel character picked on first run; unset until the user chooses one. */
+  companionAvatar?: CompanionAvatar;
   memory?: string;
   onboardingCompleted: boolean;
 }
@@ -25,7 +31,8 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   openAiKey: "",
   braveApiKey: "",
   googleClientId: "",
-  characterRenderer: "glb",
+  characterRenderer: "orb",
+  floatingOrb: true,
   characterModelUrl: "",
   voiceId: "coral",
   soundEnabled: true,

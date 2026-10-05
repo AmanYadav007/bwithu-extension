@@ -6,11 +6,11 @@ BwithU is a Chrome MV3 side-panel companion. The beta direction is a live “B C
 
 ```bash
 npm install
-npm run dev
-npm run build
+npm run dev     # build the extension against a local proxy, then serve the proxy on :8787
+npm run build   # production build (uses the deployed proxy)
 ```
 
-Load the built extension from `dist` in `chrome://extensions` with Developer Mode enabled.
+Load `apps/chrome-extension/dist` in `chrome://extensions` with Developer Mode enabled. After each rebuild, click the reload icon on the extension card.
 
 ## Proxy (Vercel) environment
 

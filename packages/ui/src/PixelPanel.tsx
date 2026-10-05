@@ -2,7 +2,8 @@ import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { resolveVoice } from "@bwithu/shared";
-import type { BrowserAction, ConversationTurn, BwithuSettings } from "@bwithu/shared";
+import type { BrowserAction, CompanionAvatar, ConversationTurn, BwithuSettings } from "@bwithu/shared";
+import { PIXEL_COMPANIONS } from "./pixelCompanions";
 
 interface PixelPanelProps {
   settings: BwithuSettings;
@@ -234,18 +235,36 @@ export default function PixelPanel({
             />
           </label>
           <div className="bwithu-settings__row">
-            <label>
-              Body
-              <select
-                value={settings.characterRenderer}
-                onChange={(event) =>
-                  onSettingsChange({ ...settings, characterRenderer: event.target.value as BwithuSettings["characterRenderer"] })
-                }
-              >
-                <option value="glb">3D</option>
-                <option value="sprite">Pixel</option>
-              </select>
-            </label>
+            {settings.companionAvatar ? (
+              <label>
+                Companion
+                <select
+                  value={settings.companionAvatar}
+                  onChange={(event) => {
+                    const avatar = event.target.value as CompanionAvatar;
+                    onSettingsChange({ ...settings, companionAvatar: avatar, voiceId: PIXEL_COMPANIONS[avatar].voiceId });
+                  }}
+                >
+                  {(Object.keys(PIXEL_COMPANIONS) as CompanionAvatar[]).map((avatar) => (
+                    <option key={avatar} value={avatar}>{PIXEL_COMPANIONS[avatar].label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label>
+                Body
+                <select
+                  value={settings.characterRenderer}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, characterRenderer: event.target.value as BwithuSettings["characterRenderer"] })
+                  }
+                >
+                  <option value="orb">Orb</option>
+                  <option value="glb">3D bear</option>
+                  <option value="sprite">Pixel</option>
+                </select>
+              </label>
+            )}
             <label>
               Voice
               <select
@@ -273,15 +292,17 @@ export default function PixelPanel({
               </select>
             </label>
           </div>
-          <label>
-            Character file
-            <input
-              value={settings.characterModelUrl || ""}
-              onChange={(event) => onSettingsChange({ ...settings, characterModelUrl: event.target.value.trim() })}
-              placeholder="result.glb or b.vrm"
-              type="text"
-            />
-          </label>
+          {!settings.companionAvatar && (
+            <label>
+              Character file
+              <input
+                value={settings.characterModelUrl || ""}
+                onChange={(event) => onSettingsChange({ ...settings, characterModelUrl: event.target.value.trim() })}
+                placeholder="result.glb or b.vrm"
+                type="text"
+              />
+            </label>
+          )}
           <div className="bwithu-settings__row">
             <label>
               Move
@@ -322,6 +343,14 @@ export default function PixelPanel({
                 onChange={(event) => onSettingsChange({ ...settings, voiceEnabled: event.target.checked })}
               />
               Voice
+            </label>
+            <label className="bwithu-check">
+              <input
+                type="checkbox"
+                checked={settings.floatingOrb !== false}
+                onChange={(event) => onSettingsChange({ ...settings, floatingOrb: event.target.checked })}
+              />
+              Show on pages
             </label>
             <button type="button" onClick={onResetPosition}>
               Reset
