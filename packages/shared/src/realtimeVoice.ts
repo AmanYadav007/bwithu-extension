@@ -64,7 +64,7 @@ export class RealtimeVoiceSession {
   }
 
   private get name() {
-    return this.settings.companionName || "B";
+    return this.settings.companionName || "your companion";
   }
 
   /** Resolves once the socket is open and configured; rejects so callers can fall back to push-to-talk. */

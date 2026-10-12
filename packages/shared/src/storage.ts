@@ -181,7 +181,7 @@ export async function proxyHeaders(): Promise<Record<string, string>> {
 export async function proxyError(response: Response, fallback: string): Promise<Error> {
   if (response.status === 429) {
     const data = (await response.json().catch(() => ({}))) as { error?: string };
-    return new Error(data.error || "Daily limit reached. B will be back tomorrow!");
+    return new Error(data.error || "Daily limit reached. Your companion will be back tomorrow!");
   }
   return new Error(`${fallback} (${response.status}).`);
 }

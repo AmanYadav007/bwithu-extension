@@ -13,11 +13,11 @@ function runtime() {
 async function sendRuntimeMessage<T>(message: unknown): Promise<T> {
   const chromeRuntime = runtime();
   if (!chromeRuntime?.sendMessage) {
-    throw new Error("Open Bumi from the installed Chrome extension so I can reach Grok.");
+    throw new Error("Open your companion from the installed Chrome extension to connect.");
   }
 
   const response = (await chromeRuntime.sendMessage(message)) as { ok?: boolean; error?: string; data?: T };
-  if (!response?.ok) throw new Error(response?.error ?? "Bumi could not reach Grok.");
+  if (!response?.ok) throw new Error(response?.error ?? "Your companion could not connect.");
   return response.data as T;
 }
 

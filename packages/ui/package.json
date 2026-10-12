@@ -10,11 +10,7 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./src/index.css": "./src/index.css",
-    "./live-orb-engine": {
-      "import": "./dist/components/ui/live-orb-engine.js",
-      "types": "./dist/components/ui/live-orb-engine.d.ts"
-    }
+    "./src/index.css": "./src/index.css"
   },
   "dependencies": {
     "@bwithu/shared": "*",

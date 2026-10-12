@@ -28,3 +28,14 @@ dist-ssr
 
 # Store packages
 *.zip
+
+# Agent/tool runtime dirs
+.claude/
+.kun-canvas/
+.kunsdd/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Local model source (shipped copy lives in apps/chrome-extension/public/model.glb)
+/model/

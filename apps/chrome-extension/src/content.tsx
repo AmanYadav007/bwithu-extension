@@ -1,8 +1,5 @@
 import browser from "webextension-polyfill";
 import { collectPageContext } from "./pageContext";
-import { mountPageOrb } from "./pageOrb";
-
-mountPageOrb();
 
 browser.runtime.onMessage.addListener((request: unknown) => {
   if (
