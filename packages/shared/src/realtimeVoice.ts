@@ -43,6 +43,7 @@ export class RealtimeVoiceSession {
   private turnFinalizeTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionLimitTimer: ReturnType<typeof setTimeout> | null = null;
   private pageContext = "";
+  private muted = false;
 
   constructor(
     settings: BwithuSettings,
@@ -88,6 +89,16 @@ export class RealtimeVoiceSession {
   stop() {
     this.stopMic();
     this.callbacks.onStatus("Stopped.");
+  }
+
+  /** Enable or disable microphone input without ending the session. */
+  setMuted(muted: boolean) {
+    this.muted = muted;
+    if (!muted) {
+      this.callbacks.onStatus(`${this.name} is listening...`);
+    } else {
+      this.callbacks.onStatus("Microphone muted.");
+    }
   }
 
   /** Milliseconds of reply audio still queued to play; replies stream in faster than they play. */
@@ -145,6 +156,7 @@ export class RealtimeVoiceSession {
     silentMonitor.connect(this.captureContext.destination);
 
     this.processor.onaudioprocess = (event) => {
+      if (this.muted) return;
       const input = event.inputBuffer.getChannelData(0);
       const downsampled = downsampleFloat32(input, this.nativeSampleRate, SAMPLE_RATE);
       const chunk = float32ToBase64PCM16(downsampled);

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { GLBCharacter, SvgCompanion } from "@bwithu/ui";
-import type { BearMood, BearState } from "@bwithu/shared";
+import { RealtimeVoiceSession, loadSettings, loadMessages, saveMessages } from "@bwithu/shared";
+import type { BearMood, BearState, BwithuSettings, ConversationTurn } from "@bwithu/shared";
 
 type Mode = "audio" | "video";
 type Screen = "welcome" | "call";
+type CallStatus = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "muted" | "error" | "ended";
 
 const MODEL_SRC = `${import.meta.env.BASE_URL}model.glb`;
 const SVG_ARTWORK_SRC = `${import.meta.env.BASE_URL}characters/male/character.svg`;
@@ -94,6 +96,20 @@ function Call({ mode, note, setNote, onEnd }: CallProps) {
   const areaRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 300, height: 440 });
   const [glbFailed, setGlbFailed] = useState(false);
+  const [settings, setSettings] = useState<BwithuSettings | null>(null);
+  const [messages, setMessages] = useState<ConversationTurn[]>([]);
+  const [callStatus, setCallStatus] = useState<CallStatus>("idle");
+  const [userTranscript, setUserTranscript] = useState("");
+  const [assistantTranscript, setAssistantTranscript] = useState("");
+  const [isMuted, setIsMuted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const sessionRef = useRef<RealtimeVoiceSession | null>(null);
+  const isMountedRef = useRef(true);
+  const pendingUserTranscriptRef = useRef("");
+  const pendingAssistantTranscriptRef = useRef("");
+  const assistantDoneRef = useRef(false);
+  const sessionEndedRef = useRef(false);
 
   // Size the GLB canvas to the stage (quantized to avoid renderer re-creation).
   useEffect(() => {
@@ -112,13 +128,196 @@ function Call({ mode, note, setNote, onEnd }: CallProps) {
     return () => observer.disconnect();
   }, []);
 
+  // Load settings and messages on mount
+  useEffect(() => {
+    isMountedRef.current = true;
+    sessionEndedRef.current = false;
+    loadSettings().then((s) => {
+      if (isMountedRef.current) setSettings(s);
+    });
+    loadMessages().then((msgs) => {
+      if (isMountedRef.current) setMessages(msgs);
+    });
+    return () => {
+      isMountedRef.current = false;
+      // Cleanup session on unmount
+      if (sessionRef.current) {
+        sessionRef.current.close();
+        sessionRef.current = null;
+      }
+    };
+  }, []);
+
+  // Persist messages when they change (but not on every partial transcript)
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveMessages(messages);
+    }
+  }, [messages]);
+
+  const handleStatus = (status: string) => {
+    if (!isMountedRef.current) return;
+    const lower = status.toLowerCase();
+    if (lower.includes("connecting")) setCallStatus("connecting");
+    else if (lower.includes("listening")) setCallStatus("listening");
+    else if (lower.includes("thinking")) setCallStatus("thinking");
+    else if (lower.includes("muted")) setCallStatus("muted");
+    else if (lower.includes("error")) setCallStatus("error");
+    else if (lower.includes("ended") || lower.includes("stopped")) setCallStatus("ended");
+    else if (lower.includes("speaking") || lower.includes("reply")) setCallStatus("speaking");
+    setNote(status);
+  };
+
+  const handleUserTranscript = (text: string) => {
+    if (!isMountedRef.current) return;
+    pendingUserTranscriptRef.current = text;
+    setUserTranscript(text);
+    setCallStatus("listening");
+  };
+
+  const handleAssistantText = (text: string) => {
+    if (!isMountedRef.current) return;
+    pendingAssistantTranscriptRef.current = text;
+    setAssistantTranscript(text);
+    setCallStatus("speaking");
+  };
+
+  const handleAssistantDone = (text: string) => {
+    if (!isMountedRef.current || sessionEndedRef.current) return;
+    const finalText = text.trim();
+    if (finalText) {
+      // Save completed turn
+      setMessages((prev) => {
+        // Avoid duplicate if already added
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant" && last.content === finalText) return prev;
+        return [...prev, { role: "assistant", content: finalText }];
+      });
+    }
+    pendingAssistantTranscriptRef.current = "";
+    setAssistantTranscript("");
+    assistantDoneRef.current = true;
+    setCallStatus("listening");
+  };
+
+  const startSession = async () => {
+    if (!settings || sessionRef.current) return;
+    setError(null);
+    setCallStatus("connecting");
+    setUserTranscript("");
+    setAssistantTranscript("");
+    pendingUserTranscriptRef.current = "";
+    pendingAssistantTranscriptRef.current = "";
+    assistantDoneRef.current = false;
+
+    const pageContextGetter = async () => {
+      // In web app, no browser context; return empty or page info
+      return `Current page: ${document.title} (${window.location.href})`;
+    };
+
+    const session = new RealtimeVoiceSession(
+      settings,
+      {
+        onUserTranscript: handleUserTranscript,
+        onAssistantText: handleAssistantText,
+        onAssistantDone: handleAssistantDone,
+        onStatus: handleStatus,
+      },
+      pageContextGetter,
+    );
+
+    sessionRef.current = session;
+
+    try {
+      await session.start();
+      if (!isMountedRef.current) {
+        session.close();
+        return;
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const msg = err instanceof Error ? err.message : "Failed to start voice session.";
+      setError(msg);
+      setCallStatus("error");
+      setNote(`Error: ${msg}`);
+      sessionRef.current = null;
+    }
+  };
+
+  const endCall = () => {
+    sessionEndedRef.current = true;
+    if (sessionRef.current) {
+      sessionRef.current.close();
+      sessionRef.current = null;
+    }
+    setCallStatus("ended");
+    setUserTranscript("");
+    setAssistantTranscript("");
+    setIsMuted(false);
+    // Save any pending transcripts
+    if (pendingUserTranscriptRef.current.trim()) {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "user" && last.content === pendingUserTranscriptRef.current.trim()) return prev;
+        return [...prev, { role: "user", content: pendingUserTranscriptRef.current.trim() }];
+      });
+      pendingUserTranscriptRef.current = "";
+    }
+    onEnd();
+  };
+
+  const toggleMute = () => {
+    if (!sessionRef.current) return;
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    sessionRef.current.setMuted(nextMuted);
+  };
+
+  const handleMicClick = () => {
+    if (callStatus === "idle" || callStatus === "ended" || callStatus === "error") {
+      startSession();
+    } else if (callStatus === "listening" || callStatus === "thinking" || callStatus === "speaking") {
+      toggleMute();
+    }
+  };
+
+  // Determine mic button appearance
+  const micButtonClass = callStatus === "idle" || callStatus === "ended" || callStatus === "error"
+    ? "bw-control bw-control--primary"
+    : isMuted
+      ? "bw-control bw-control--primary bw-control--muted"
+      : "bw-control bw-control--primary bw-control--active";
+
+  // Status dot color
+  const statusDotClass = callStatus === "error" ? "bw-status__dot--error"
+    : callStatus === "ended" || callStatus === "idle" ? "bw-status__dot--idle"
+    : isMuted ? "bw-status__dot--muted"
+    : "bw-status__dot--active";
+
+  // Status text
+  const statusText = error
+    ? "Error"
+    : callStatus === "connecting"
+      ? "Connecting..."
+      : callStatus === "listening"
+        ? "Listening..."
+        : callStatus === "thinking"
+          ? "Thinking..."
+          : callStatus === "speaking"
+            ? "Speaking..."
+            : callStatus === "muted"
+              ? "Muted"
+              : callStatus === "ended"
+                ? "Ended"
+                : "Ready";
+
   return (
     <div className="bw-screen bw-call">
       <header className="bw-call__header">
         <span className="bw-call__name">Companion</span>
         <span className="bw-call__status">
-          <i aria-hidden="true" />
-          Ready
+          <i className={statusDotClass} aria-hidden="true" />
+          {statusText}
         </span>
       </header>
 
@@ -128,8 +327,8 @@ function Call({ mode, note, setNote, onEnd }: CallProps) {
         ) : (
           <GLBCharacter
             modelSrc={MODEL_SRC}
-            state={"idle" as BearState}
-            mood={"calm" as BearMood}
+            state={callStatus === "speaking" ? "talk" : callStatus === "listening" ? "listen" : "idle"}
+            mood="calm"
             facing={1}
             width={size.width}
             height={size.height}
@@ -144,27 +343,35 @@ function Call({ mode, note, setNote, onEnd }: CallProps) {
       </div>
 
       <div className="bw-call__caption" aria-live="polite">
-        {note || null}
+        {assistantTranscript || userTranscript || note || null}
       </div>
+
+      {error && (
+        <div className="bw-call__error" role="alert">
+          {error}
+        </div>
+      )}
 
       <div className="bw-call__controls">
         <button
           type="button"
-          className="bw-control bw-control--primary"
-          onClick={() => setNote("Voice arrives in Phase 2 — this is the scaffold.")}
-          aria-label="Start talking"
+          className={micButtonClass}
+          onClick={handleMicClick}
+          aria-label={isMuted ? "Unmute" : callStatus === "idle" ? "Start talking" : "Mute"}
+          disabled={callStatus === "connecting"}
         >
-          <span className="bw-control__mic" aria-hidden="true" />
+          <span className={`bw-control__mic ${isMuted ? "bw-control__mic--muted" : ""}`} aria-hidden="true" />
         </button>
         <button
           type="button"
           className="bw-control"
           onClick={() => setNote("Text chat arrives in Phase 3.")}
           aria-label="Open text chat"
+          disabled
         >
           Chat
         </button>
-        <button type="button" className="bw-control bw-control--end" onClick={onEnd} aria-label="End call">
+        <button type="button" className="bw-control bw-control--end" onClick={endCall} aria-label="End call">
           End
         </button>
       </div>

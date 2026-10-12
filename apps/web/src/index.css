@@ -274,6 +274,59 @@ body {
   border-radius: 50%;
   background: #1a1430;
   display: inline-block;
+  position: relative;
+}
+
+.bw-control--active .bw-control__mic {
+  background: #4ade80;
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.6);
+}
+
+.bw-control--muted .bw-control__mic {
+  background: #f87171;
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.6);
+}
+
+.bw-control--muted .bw-control__mic::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 2px;
+  background: #1a1430;
+  transform: rotate(45deg);
+  top: 50%;
+  left: 50%;
+  margin-left: -9px;
+  margin-top: -1px;
+}
+
+.bw-call__error {
+  padding: 8px 20px;
+  color: #f87171;
+  font-size: 12px;
+  text-align: center;
+  background: rgba(248, 113, 113, 0.12);
+  border-top: 1px solid rgba(248, 113, 113, 0.2);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.bw-status__dot--active {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.8);
+}
+
+.bw-status__dot--muted {
+  background: #f87171;
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.8);
+}
+
+.bw-status__dot--idle {
+  background: #6e5fd0;
+}
+
+.bw-status__dot--error {
+  background: #f87171;
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.8);
 }
 
 .bw-screen :focus-visible {
