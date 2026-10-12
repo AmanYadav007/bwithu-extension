@@ -16,7 +16,9 @@
     "dev:mac": "npm run dev -w apps/macdesktop",
     "build:mac": "npm run build:shared && npm run build -w apps/macdesktop",
     "dev:windows": "npm run dev -w apps/windowsdesktop",
-    "build:windows": "npm run build:shared && npm run build -w apps/windowsdesktop"
+    "build:windows": "npm run build:shared && npm run build -w apps/windowsdesktop",
+    "dev:web": "npm run build:shared && npm run dev -w apps/web",
+    "build:web": "npm run build:shared && npm run build -w apps/web"
   },
   "devDependencies": {
     "typescript": "~6.0.2"

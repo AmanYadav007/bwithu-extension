@@ -131,7 +131,7 @@ export default function GLBCharacter({ modelSrc, state, mood, facing, width, hei
           VRMUtils.removeUnnecessaryJoints(model);
           VRMUtils.rotateVRM0(vrm);
         }
-        prepareModel(model, gltf.animations, vrm);
+        prepareModel(model, gltf.animations, vrm, right - left, top - bottom);
         modelRef.current = model;
         scene.add(model);
       },
@@ -186,7 +186,7 @@ export default function GLBCharacter({ modelSrc, state, mood, facing, width, hei
   return <div className="bwithu-glb-character" ref={mountRef} style={{ width, height }} aria-hidden="true" />;
 }
 
-function prepareModel(model: THREE.Group, clips: THREE.AnimationClip[], vrm?: VRM) {
+function prepareModel(model: THREE.Group, clips: THREE.AnimationClip[], vrm: VRM | undefined, frustumWidth: number, frustumHeight: number) {
   const box = new THREE.Box3().setFromObject(model);
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
@@ -194,8 +194,13 @@ function prepareModel(model: THREE.Group, clips: THREE.AnimationClip[], vrm?: VR
   box.getCenter(center);
 
   model.position.sub(center);
-  const maxDimension = Math.max(size.x, size.y, size.z) || 1;
-  const baseScale = 1.62 / maxDimension;
+  // Reliable automatic fit: scale so the character fits the visible frustum on
+  // BOTH axes, never clipping head, hands, or feet. Wide poses make width the
+  // binding constraint in portrait panels; the character still fills the
+  // canvas as large as is safely possible.
+  const heightFit = (frustumHeight * 0.8) / (size.y || 1);
+  const widthFit = (frustumWidth * 0.92) / (size.x || 1);
+  const baseScale = Math.min(heightFit, widthFit);
   model.scale.setScalar(baseScale);
   model.userData.baseScale = baseScale;
   model.userData.characterRig = buildCharacterRig(model, clips, vrm);

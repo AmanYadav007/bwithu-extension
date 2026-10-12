@@ -84,39 +84,10 @@ function micPermissionLabel(status: MicPermissionStatus) {
   }
 }
 
-function cleanLiveCaption(text: string): string {
-  if (!text) return "";
-  
-  let cleaned = text.trim();
-  
-  // Remove "You're talking" loops specifically
-  cleaned = cleaned.replace(/(You're talking[\s.,!?]*)+/gi, () => {
-    return "You're talking... ";
-  }).trim();
-  
-  // Collapse duplicate adjacent words
-  const words = cleaned.split(/\s+/);
-  const result: string[] = [];
-  for (let i = 0; i < words.length; i++) {
-    if (i === 0 || words[i].toLowerCase() !== words[i - 1].toLowerCase()) {
-      result.push(words[i]);
-    }
-  }
-  cleaned = result.join(" ");
-
-  // Trim to 140 characters
-  if (cleaned.length > 140) {
-    cleaned = cleaned.slice(0, 137) + "...";
-  }
-  
-  return cleaned.trim();
-}
-
 function callStateLabel(state: BearState, status: string, isRecording: boolean) {
-  if (state === "talk" || status.toLowerCase().includes("answering")) return "Speaking...";
-  if (state === "think") return "Thinking...";
-  if (isRecording || state === "listen") return "Listening...";
-  if (state === "searching" || status.toLowerCase().includes("search")) return "Searching...";
+  if (state === "talk" || status.toLowerCase().includes("answering")) return "Speaking";
+  if (state === "think" || state === "searching") return "Thinking";
+  if (isRecording || state === "listen") return "Listening";
   return "Ready";
 }
 
@@ -143,10 +114,15 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [liveCaption, setLiveCaption] = useState("");
   const [assistantCaption, setAssistantCaption] = useState("");
   const [glbUnavailable, setGlbUnavailable] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hint, setHint] = useState("");
+  const [characterSize, setCharacterSize] = useState({ width: 300, height: 420 });
 
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spawnDoneRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const characterAreaRef = useRef<HTMLDivElement | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const realtimeVoiceRef = useRef<RealtimeVoiceSession | null>(null);
@@ -823,6 +799,24 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     }
   }, [clearStateTimer, dispatchBehavior, dispatchMoodEvent, isRecording, requestMicrophoneAccess, settings, startLegacyRecording]);
 
+  // Measure the character area so the GLB canvas always matches the available
+  // stage space (quantized to avoid re-creating the WebGL renderer per pixel).
+  useEffect(() => {
+    const area = characterAreaRef.current;
+    if (!area) return;
+    let last = { width: 0, height: 0 };
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      const next = { width: Math.round(rect.width), height: Math.round(rect.height) };
+      if (Math.abs(next.width - last.width) < 16 && Math.abs(next.height - last.height) < 16) return;
+      last = next;
+      setCharacterSize(next);
+    });
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, []);
+
   const handleMicButtonClick = useCallback(() => {
     console.log("Mic button clicked");
     if (isRecording) stopRecording();
@@ -863,12 +857,15 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     handleSendMessageRef.current = handleSendMessage;
   }, [startRecording, handleSendMessage]);
 
-  const latestUserMessage = cleanLiveCaption(liveCaption || [...messages].reverse().find((message) => message.role === "user")?.content || "");
-  const latestAssistantMessage =
-    assistantCaption ||
-    speechText ||
-    [...messages].reverse().find((message) => message.role === "assistant")?.content ||
-    "";
+  // One caption at a time in the call view: the user's live transcript while
+  // listening, the companion's current reply while speaking, or an optional
+  // idle hint. Full history stays in the text-chat panel.
+  const captionText =
+    bearState === "listen"
+      ? liveCaption.trim()
+      : bearState === "talk"
+        ? (assistantCaption || speechText).trim()
+        : hint;
   const companionName = settings.companionName || "Your companion";
   const liveStateText = callStateLabel(bearState, status, isRecording);
 
@@ -902,8 +899,8 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       </header>
 
       <main className={`bwithu-companion-stage bwithu-companion-stage--${bearState}`} aria-label={`${companionName} call`}>
-        <div className="bwithu-companion-stage__atmosphere" aria-hidden="true" />
-        <div className="bwithu-companion-stage__portrait-frame">
+        <div className="bwithu-companion-stage__glow" aria-hidden="true" />
+        <div className="bwithu-companion-stage__character" ref={characterAreaRef}>
           {glbUnavailable ? (
             <SvgCompanion
               src={resolveAsset(settings.characterArtworkUrl || "characters/male/character.svg")}
@@ -915,15 +912,14 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
               state={bearState}
               mood={mood}
               facing={1}
-              width={264}
-              height={334}
+              width={characterSize.width}
+              height={characterSize.height}
               onLoadError={() => setGlbUnavailable(true)}
             />
           )}
         </div>
         <div className="bwithu-companion-stage__caption" aria-live="polite">
-          <span>{liveStateText}</span>
-          <strong>{isRecording ? "Tap the call button to end" : "Your companion is ready when you are"}</strong>
+          {captionText ? <p>{captionText}</p> : null}
         </div>
         {activeDisplay && !showChatPanel && (
           <InfoDisplay
@@ -934,23 +930,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             onCancelAction={() => setPendingAction(null)}
             onSelectTab={handleSelectTab}
           />
-        )}
-        {!showChatPanel && (latestAssistantMessage || latestUserMessage) && (
-          <div
-            className={`bwithu-conversation-strip${activeDisplay || pendingAction ? " bwithu-conversation-strip--with-card" : ""}`}
-            aria-live="polite"
-          >
-            {latestUserMessage && (
-              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--user">
-                {latestUserMessage}
-              </div>
-            )}
-            {latestAssistantMessage && (
-              <div className="bwithu-conversation-bubble bwithu-conversation-bubble--assistant">
-                {latestAssistantMessage}
-              </div>
-            )}
-          </div>
         )}
       </main>
 
@@ -1008,6 +987,17 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           >
             {isRecording ? "■" : "●"}
           </button>
+          <input
+            className="bwithu-call-controls__message"
+            value={callDraft}
+            onChange={(event) => {
+              setCallDraft(event.target.value);
+              if (hint) setHint("");
+            }}
+            placeholder={`Message ${companionName}`}
+            aria-label={`Message ${companionName}`}
+          />
+          <button type="submit" className="bwithu-call-control bwithu-call-control--send" title="Send message" aria-label="Send message">➤</button>
           <button
             type="button"
             className="bwithu-call-control bwithu-call-control--chat"
@@ -1017,31 +1007,56 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           >
             💬
           </button>
-          <input
-            value={callDraft}
-            onChange={(event) => setCallDraft(event.target.value)}
-            placeholder={`Message ${companionName}`}
-            aria-label={`Message ${companionName}`}
-          />
-          <button type="submit" className="bwithu-call-control" title="Send message" aria-label="Send message">➤</button>
-          <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("Read this page")} title="Read page">📄</button>
-          <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("What tabs are open?")} title="Tabs">▦</button>
-          <button
-            type="button"
-            className="bwithu-call-control"
-            onClick={() => {
-              const query = callDraft.trim();
-              if (query) sendCallCommand(`Search the web for ${query}`);
-              else {
-                setSpeechText("Type what you want me to search.");
-                setAssistantCaption("Type what you want me to search.");
-              }
-            }}
-            title="Search"
-          >
-            🔍
-          </button>
-          <button type="button" className="bwithu-call-control bwithu-call-control--quiet" onClick={openSettingsPanel} title="Settings">⚙️</button>
+          <div className="bwithu-call-menu">
+            <button
+              ref={moreButtonRef}
+              type="button"
+              className="bwithu-call-control bwithu-call-control--more"
+              onClick={() => setMenuOpen((open) => !open)}
+              title="More actions"
+              aria-label="More actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <>
+                <div className="bwithu-call-menu__backdrop" aria-hidden="true" onClick={() => setMenuOpen(false)} />
+                <div className="bwithu-call-menu__pop" role="menu" aria-label="More actions">
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); sendCallCommand("Read this page"); }}>📄 Read page</button>
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); sendCallCommand("What tabs are open?"); }}>▦ Tabs</button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      const query = callDraft.trim();
+                      if (query) {
+                        setHint("");
+                        sendCallCommand(`Search the web for ${query}`);
+                      } else {
+                        setHint("Type what you want me to search.");
+                        setCallDraft("");
+                      }
+                    }}
+                  >
+                    🔍 Search
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      openSettingsPanel();
+                    }}
+                  >
+                    ⚙️ Settings
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </form>
       ) : (
         !showChatPanel && (
