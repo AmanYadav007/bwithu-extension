@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
-import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, enforceRequestSize, validateJsonBody } from "./_cors";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB for audio
 
@@ -27,9 +27,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
-  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
-    return res.status(413).json({ error: "Request body too large (max 5 MB)." });
-  }
+  const { body, error } = await enforceRequestSize<TranscribeRequest>(req, MAX_BODY_BYTES, req.body);
+  if (error) return res.status(413).json({ error });
+  if (!body) return res.status(400).json({ error: "Invalid request body." });
 
   if (!(await guard(req, res, "transcribe"))) return;
 
@@ -44,32 +44,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
-  const body = validateJsonBody<TranscribeRequest>(req.body, (b): b is TranscribeRequest => {
+  const validatedBody = validateJsonBody<TranscribeRequest>(body, (b): b is TranscribeRequest => {
     if (!b || typeof b !== "object") return false;
     return Array.isArray(b.audio) && typeof b.mimeType === "string" && ALLOWED_MIME_TYPES.has(b.mimeType);
   });
 
-  if (!body) {
+  if (!validatedBody) {
     return res.status(400).json({ error: "Missing or invalid audio array or unsupported mimeType." });
   }
 
-  if (body.audio.length === 0 || body.audio.length > MAX_BODY_BYTES) {
+  if (validatedBody.audio.length === 0 || validatedBody.audio.length > MAX_BODY_BYTES) {
     return res.status(400).json({ error: "Audio data size invalid (max 5 MB)." });
   }
 
   try {
     const formData = new FormData();
-    const filename = body.mimeType.includes("mpeg")
+    const filename = validatedBody.mimeType.includes("mpeg")
       ? "recording.mp3"
-      : body.mimeType.includes("ogg")
+      : validatedBody.mimeType.includes("ogg")
         ? "recording.ogg"
-        : body.mimeType.includes("mp4")
+        : validatedBody.mimeType.includes("mp4")
           ? "recording.mp4"
-          : body.mimeType.includes("wav")
+          : validatedBody.mimeType.includes("wav")
             ? "recording.wav"
             : "recording.webm";
 
-    const blob = new Blob([new Uint8Array(body.audio)], { type: body.mimeType });
+    const blob = new Blob([new Uint8Array(validatedBody.audio)], { type: validatedBody.mimeType });
     formData.append("file", blob, filename);
 
     const response = await fetch("https://api.x.ai/v1/stt", {

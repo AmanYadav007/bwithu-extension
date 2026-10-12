@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
-import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, enforceRequestSize, validateJsonBody } from "./_cors";
 
 const MAX_BODY_BYTES = 32 * 1024; // 32 KB (text + voiceId)
 const XAI_VOICES = new Set(["ara", "eve", "rex", "sal", "leo"]);
@@ -17,9 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
-  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
-    return res.status(413).json({ error: "Request body too large." });
-  }
+  const { body, error } = await enforceRequestSize<SpeakRequest>(req, MAX_BODY_BYTES, req.body);
+  if (error) return res.status(413).json({ error });
+  if (!body) return res.status(400).json({ error: "Invalid request body." });
 
   if (!(await guard(req, res, "speak"))) return;
 
@@ -34,17 +34,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
-  const body = validateJsonBody<SpeakRequest>(req.body, (b): b is SpeakRequest => {
+  const validatedBody = validateJsonBody<SpeakRequest>(body, (b): b is SpeakRequest => {
     if (!b || typeof b !== "object") return false;
     return typeof b.text === "string" && b.text.length > 0 && b.text.length <= 5000;
   });
 
-  if (!body) {
+  if (!validatedBody) {
     return res.status(400).json({ error: "Missing or invalid text parameter (max 5000 chars)." });
   }
 
-  const voice = XAI_VOICES.has(String(body.voiceId || "").toLowerCase())
-    ? String(body.voiceId).toLowerCase()
+  const voice = XAI_VOICES.has(String(validatedBody.voiceId || "").toLowerCase())
+    ? String(validatedBody.voiceId).toLowerCase()
     : "ara";
 
   try {
@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        text: body.text.slice(0, 1200),
+        text: validatedBody.text.slice(0, 1200),
         voice_id: voice,
         language: "auto",
       }),

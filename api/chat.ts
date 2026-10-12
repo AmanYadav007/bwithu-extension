@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
-import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, enforceRequestSize, validateJsonBody } from "./_cors";
 
 const MAX_BODY_BYTES = 64 * 1024; // 64 KB
 const ALLOWED_MODELS = new Set(["grok-4.3", "grok-4-fast-non-reasoning", "grok-3-mini"]);
@@ -19,9 +19,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
-  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
-    return res.status(413).json({ error: "Request body too large." });
-  }
+  const { body, error } = await enforceRequestSize<ChatRequest>(req, MAX_BODY_BYTES, req.body);
+  if (error) return res.status(413).json({ error });
+  if (!body) return res.status(400).json({ error: "Invalid request body." });
 
   if (!(await guard(req, res, "chat"))) return;
 
@@ -36,13 +36,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
-  const body = validateJsonBody<ChatRequest>(req.body, (b): b is ChatRequest => {
+  const validatedBody = validateJsonBody<ChatRequest>(body, (b): b is ChatRequest => {
     if (!b || typeof b !== "object") return false;
     const msg = b.messages;
     return !msg || Array.isArray(msg);
   });
 
-  if (!body) {
+  if (!validatedBody) {
     return res.status(400).json({ error: "Invalid request body." });
   }
 
@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(sanitizeChatBody(body)),
+      body: JSON.stringify(sanitizeChatBody(validatedBody)),
     });
 
     if (!response.ok) {

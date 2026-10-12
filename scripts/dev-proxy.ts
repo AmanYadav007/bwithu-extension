@@ -18,6 +18,15 @@ if (existsSync(envPath)) {
 
 const ROUTES = ["chat", "realtime-secret", "search", "speak", "transcribe"];
 
+// Per-route body size limits (must match api/*.ts)
+const BODY_LIMITS: Record<string, number> = {
+  chat: 64 * 1024,
+  "realtime-secret": 1 * 1024,
+  search: 4 * 1024,
+  speak: 32 * 1024,
+  transcribe: 5 * 1024 * 1024,
+};
+
 type Handler = (req: unknown, res: unknown) => unknown;
 
 function parseAllowedOrigins(envValue: string): string[] {
@@ -72,15 +81,25 @@ function handlePreflight(req: IncomingMessage, res: ServerResponse, config: Retu
   return true;
 }
 
-async function readBody(req: IncomingMessage) {
+async function readBodyWithLimit(req: IncomingMessage, maxBytes: number): Promise<{ body: unknown; error: string | null }> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (totalBytes > maxBytes) {
+      return { body: null, error: "Request body too large." };
+    }
+    chunks.push(buffer);
+  }
+
   const raw = Buffer.concat(chunks).toString("utf8");
-  if (!raw) return undefined;
+  if (!raw) return { body: undefined, error: null };
+
   try {
-    return JSON.parse(raw);
+    return { body: JSON.parse(raw), error: null };
   } catch {
-    return raw;
+    return { body: raw, error: "Invalid JSON body." };
   }
 }
 
@@ -123,10 +142,19 @@ createServer(async (req, res) => {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
+  // Enforce body size limit before calling handler
+  const maxBytes = BODY_LIMITS[route] || 1024 * 1024;
+  const { body, error } = await readBodyWithLimit(req, maxBytes);
+  if (error) {
+    res.statusCode = 413;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error }));
+    return;
+  }
+
   const started = Date.now();
   try {
     const module = (await import(resolve(root, "api", `${route}.ts`))) as { default: Handler };
-    const body = req.method === "POST" ? await readBody(req) : undefined;
     const vercelReq = {
       method: req.method,
       headers: { ...req.headers, "x-forwarded-for": req.socket.remoteAddress || "local" },

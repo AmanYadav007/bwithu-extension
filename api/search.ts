@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
-import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, enforceRequestSize, validateJsonBody } from "./_cors";
 
 const MAX_BODY_BYTES = 4 * 1024; // 4 KB for query
 
@@ -21,20 +21,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
-  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
-    return res.status(413).json({ error: "Request body too large." });
-  }
-
   if (!(await guard(req, res, "search"))) return;
 
-  const query = req.method === "POST"
-    ? validateJsonBody<SearchRequest>(req.body, (b): b is SearchRequest =>
-        !!b && typeof b === "object" && typeof b.query === "string" && b.query.length > 0 && b.query.length <= 500
-      )?.query
-    : (req.query?.query as string | undefined);
+  let query: string | undefined;
 
-  if (!query || query.length > 500) {
-    return res.status(400).json({ error: "Missing or invalid query parameter (max 500 chars)." });
+  if (req.method === "POST") {
+    const { body, error } = await enforceRequestSize<SearchRequest>(req, MAX_BODY_BYTES, req.body);
+    if (error) return res.status(413).json({ error });
+    if (!body) return res.status(400).json({ error: "Invalid request body." });
+
+    const validatedBody = validateJsonBody<SearchRequest>(body, (b): b is SearchRequest =>
+      !!b && typeof b === "object" && typeof b.query === "string" && b.query.length > 0 && b.query.length <= 500
+    );
+
+    if (!validatedBody) {
+      return res.status(400).json({ error: "Missing or invalid query parameter (max 500 chars)." });
+    }
+    query = validatedBody.query;
+  } else if (req.method === "GET") {
+    const q = req.query?.query as string | undefined;
+    if (!q || q.length > 500) {
+      return res.status(400).json({ error: "Missing or invalid query parameter (max 500 chars)." });
+    }
+    query = q;
+  } else {
+    return res.status(405).json({ error: "Method not allowed. Use GET or POST." });
   }
 
   const braveApiKey = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY;

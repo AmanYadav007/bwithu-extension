@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
-import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize } from "./_cors";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, enforceRequestSize } from "./_cors";
 
 const MAX_BODY_BYTES = 1 * 1024; // 1 KB
 
@@ -11,9 +11,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handlePreflight(req, res, corsConfig)) return;
   applyCorsHeaders(res, corsConfig, origin);
 
-  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
-    return res.status(413).json({ error: "Request body too large." });
-  }
+  const { body, error } = await enforceRequestSize(req, MAX_BODY_BYTES, req.body);
+  if (error) return res.status(413).json({ error });
+  // body can be empty for realtime-secret
 
   if (!(await guard(req, res, "voice"))) return;
 

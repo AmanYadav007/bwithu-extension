@@ -30,6 +30,7 @@ const memoryCounts = new Map<string, number>();
  * - Daily quotas per install id (X-BwithU-Install header) and per IP. Stored in Upstash Redis
  *   when UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are set (global across instances),
  *   otherwise in memory per warm instance (development only — NOT safe for production).
+ * - Burst limits per IP. Stored in Upstash when configured, otherwise in-memory per instance.
  * - Origin header is NOT authentication; it is browser-enforced and can be absent/spoofed by non-browser clients.
  *   When ALLOWED_ORIGINS is configured, only listed origins are accepted. Requests without an Origin
  *   header are allowed for non-browser clients (curl, server-to-server) but blocked for browser clients
@@ -40,7 +41,6 @@ export async function guard(req: VercelRequest, res: VercelResponse, bucket: Quo
   const origin = String(req.headers.origin || "");
 
   // Origin check: when an allowlist is configured, only listed origins pass.
-  // If no allowlist is configured, we allow all origins in development but log a warning.
   if (corsConfig.allowedOrigins.length > 0 && origin && !isOriginAllowed(origin, corsConfig)) {
     res.status(403).json({ error: "Origin not allowed." });
     return false;
@@ -49,11 +49,8 @@ export async function guard(req: VercelRequest, res: VercelResponse, bucket: Quo
   const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
   const installId = sanitizeId(String(req.headers["x-bwithu-install"] || ""));
 
-  const now = Date.now();
-  const burst = burstHits.get(ip);
-  if (!burst || burst.resetAt < now) {
-    burstHits.set(ip, { count: 1, resetAt: now + BURST_WINDOW_MS });
-  } else if (++burst.count > BURST_LIMIT) {
+  // Burst limit: use atomic Upstash when available, otherwise in-memory (dev only)
+  if (!(await checkBurstLimit(ip))) {
     res.status(429).json({ error: "Slow down a little. Try again in a minute." });
     return false;
   }
@@ -96,13 +93,69 @@ function sanitizeId(value: string) {
 }
 
 /**
+ * Checks burst limit using atomic Upstash Redis when configured.
+ * Falls back to in-memory per-instance for development only.
+ * Returns true if under limit, false if exceeded.
+ */
+async function checkBurstLimit(ip: string): Promise<boolean> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const isProduction = process.env.BWITHU_PUBLIC === "1" || process.env.VERCEL === "1";
+  const now = Date.now();
+  const windowSec = Math.ceil(BURST_WINDOW_MS / 1000);
+  const key = `burst:${ip}:${Math.floor(now / BURST_WINDOW_MS)}`;
+
+  if (url && token) {
+    try {
+      const baseUrl = url.replace(/\/$/, "");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+      // Atomic INCR with TTL using Lua
+      const luaScript = `
+        local count = redis.call("INCR", KEYS[1])
+        if count == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
+        return count
+      `;
+      const response = await fetch(`${baseUrl}/eval`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ script: luaScript, keys: [key], args: [String(windowSec)] }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as { result?: number };
+        const count = Number(data.result ?? 0);
+        return count <= BURST_LIMIT;
+      }
+      throw new Error(`Upstash burst check failed: ${response.status}`);
+    } catch (error) {
+      if (isProduction) {
+        console.error("Burst limit check failed in production", error);
+        return false; // Fail closed in production
+      }
+      console.warn("Burst limit check failed, using in-memory fallback (dev only)", error);
+    }
+  }
+
+  // Development fallback: in-memory per-instance
+  const burst = burstHits.get(ip);
+  if (!burst || burst.resetAt < now) {
+    burstHits.set(ip, { count: 1, resetAt: now + BURST_WINDOW_MS });
+    return true;
+  }
+  return ++burst.count <= BURST_LIMIT;
+}
+
+/**
  * Atomically increments quota keys with TTL using a Lua script.
  * This prevents race conditions where INCR succeeds but EXPIRE fails.
- * Falls back to pipeline (non-atomic) if Lua is not available.
+ * In production, fails if atomic operation is unavailable.
  */
 async function incrementAtomic(keys: string[]): Promise<number[]> {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const isProduction = process.env.BWITHU_PUBLIC === "1" || process.env.VERCEL === "1";
+
   if (!url || !token) {
     throw new Error("Upstash not configured");
   }
@@ -110,7 +163,7 @@ async function incrementAtomic(keys: string[]): Promise<number[]> {
   const baseUrl = url.replace(/\/$/, "");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // Try Lua script first (atomic INCR + EXPIRE)
+  // Atomic INCR + EXPIRE using Lua script
   const luaScript = `
     local results = {}
     for i = 1, #KEYS do
@@ -138,7 +191,13 @@ async function incrementAtomic(keys: string[]): Promise<number[]> {
     }
   }
 
-  // Fallback: pipeline (non-atomic but better than nothing)
+  // In production, fail if Lua script unavailable
+  if (isProduction) {
+    throw new Error(`Atomic quota increment failed: Upstash ${response.status}`);
+  }
+
+  // Development fallback: pipeline (non-atomic)
+  console.warn("Lua script failed, using pipeline fallback (dev only)");
   const commands = keys.flatMap((key) => [
     ["INCR", key],
     ["EXPIRE", key, "172800"],

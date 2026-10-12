@@ -82,18 +82,82 @@ export function corsMiddleware(config: CorsConfig = getCorsConfig()) {
   };
 }
 
-export function validateRequestSize(req: VercelRequest, maxBytes: number): boolean {
+/**
+ * Validates request size by checking Content-Length header first (fast path),
+ * then enforces actual body size by reading the stream.
+ * If body is already provided (e.g., from dev-proxy), validates its size directly.
+ * Returns the parsed body if valid, or null if oversized/invalid.
+ * Note: This consumes the request body stream on Vercel.
+ */
+export async function enforceRequestSize<T>(
+  req: VercelRequest,
+  maxBytes: number,
+  preParsedBody?: unknown
+): Promise<{ body: T | null; error: string | null }> {
+  // If body is already parsed (dev-proxy), validate its serialized size
+  if (preParsedBody !== undefined) {
+    const serialized = JSON.stringify(preParsedBody);
+    if (Buffer.byteLength(serialized, "utf8") > maxBytes) {
+      return { body: null, error: "Request body too large." };
+    }
+    return { body: preParsedBody as T, error: null };
+  }
+
+  // Vercel: read from stream
+  // Fast path: reject obviously oversized requests via Content-Length
   const contentLength = req.headers["content-length"];
   if (contentLength && parseInt(contentLength, 10) > maxBytes) {
-    return false;
+    return { body: null, error: "Request body too large." };
   }
-  return true;
+
+  // Read actual body to enforce limit
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > maxBytes) {
+        return { body: null, error: "Request body too large." };
+      }
+      chunks.push(buffer);
+    }
+  } catch {
+    // Not an async iterable (e.g., dev-proxy without pre-parsed body)
+    return { body: null, error: "Request body too large." };
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw) return { body: null, error: null };
+
+  try {
+    return { body: JSON.parse(raw) as T, error: null };
+  } catch {
+    return { body: null, error: "Invalid JSON body." };
+  }
 }
 
+/**
+ * Validates JSON body against a type guard.
+ * Use after enforceRequestSize to avoid double-parsing.
+ */
 export function validateJsonBody<T>(body: unknown, validator: (body: unknown) => body is T): T | null {
   try {
     return validator(body) ? body : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Production origin policy helper.
+ * In production (BWITHU_PUBLIC=1 or Vercel), requires explicit ALLOWED_ORIGINS.
+ * In development, allows all origins but logs a warning if unconfigured.
+ */
+export function getOriginPolicy(): { requireAllowlist: boolean; allowEmptyInDev: boolean } {
+  const isProduction = process.env.BWITHU_PUBLIC === "1" || process.env.VERCEL === "1";
+  return {
+    requireAllowlist: isProduction,
+    allowEmptyInDev: !isProduction,
+  };
 }
