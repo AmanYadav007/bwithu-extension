@@ -20,6 +20,58 @@ const ROUTES = ["chat", "realtime-secret", "search", "speak", "transcribe"];
 
 type Handler = (req: unknown, res: unknown) => unknown;
 
+function parseAllowedOrigins(envValue: string): string[] {
+  return envValue
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
+function getCorsConfig() {
+  const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS || "");
+  return {
+    allowedOrigins,
+    allowCredentials: false,
+    allowedMethods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-BwithU-Install"],
+    maxAge: 86400,
+  };
+}
+
+function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  if (allowedOrigins.length === 0) return false;
+  return allowedOrigins.includes(origin);
+}
+
+function applyCorsHeaders(res: ServerResponse, config: ReturnType<typeof getCorsConfig>, origin: string): void {
+  const allowed = isOriginAllowed(origin, config.allowedOrigins);
+
+  if (allowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    if (config.allowCredentials) {
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+  } else if (config.allowedOrigins.length === 0) {
+    // No allowlist configured — do not set any CORS headers (secure by default).
+    // In development, you can set ALLOWED_ORIGINS=http://localhost:5173,chrome-extension://<id>
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", config.allowedMethods.join(", "));
+  res.setHeader("Access-Control-Allow-Headers", config.allowedHeaders.join(", "));
+  res.setHeader("Access-Control-Max-Age", String(config.maxAge));
+  res.setHeader("Vary", "Origin");
+}
+
+function handlePreflight(req: IncomingMessage, res: ServerResponse, config: ReturnType<typeof getCorsConfig>): boolean {
+  if (req.method !== "OPTIONS") return false;
+
+  const origin = String(req.headers.origin || "");
+  applyCorsHeaders(res, config, origin);
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
+
 async function readBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -57,16 +109,19 @@ function vercelResponse(res: ServerResponse) {
 
 createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${PORT}`);
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,POST");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-BwithU-Install");
+  const corsConfig = getCorsConfig();
+  const origin = String(req.headers.origin || "");
 
   const route = url.pathname.replace(/^\/api\//, "");
   if (!url.pathname.startsWith("/api/") || !ROUTES.includes(route)) {
+    applyCorsHeaders(res, corsConfig, origin);
     res.statusCode = 404;
     res.end("Not found");
     return;
   }
+
+  if (handlePreflight(req, res, corsConfig)) return;
+  applyCorsHeaders(res, corsConfig, origin);
 
   const started = Date.now();
   try {
@@ -96,8 +151,11 @@ createServer(async (req, res) => {
     throw error;
   })
   .listen(PORT, () => {
-  const keys = ["XAI_API_KEY", "TAVILY_API_KEY", "BRAVE_SEARCH_API_KEY", "UPSTASH_REDIS_REST_URL"]
-    .map((key) => `${key}=${process.env[key] ? "set" : "-"}`)
-    .join(" ");
-  console.log(`BwithU dev proxy on http://localhost:${PORT}  (${keys})`);
-});
+    const keys = ["XAI_API_KEY", "TAVILY_API_KEY", "BRAVE_SEARCH_API_KEY", "UPSTASH_REDIS_REST_URL"]
+      .map((key) => `${key}=${process.env[key] ? "set" : "-"}`)
+      .join(" ");
+    const corsInfo = process.env.ALLOWED_ORIGINS
+      ? `CORS: ${process.env.ALLOWED_ORIGINS}`
+      : "CORS: none (secure by default — set ALLOWED_ORIGINS to allow origins)";
+    console.log(`BwithU dev proxy on http://localhost:${PORT}  (${keys})  ${corsInfo}`);
+  });

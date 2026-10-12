@@ -1,12 +1,26 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
 
+const MAX_BODY_BYTES = 32 * 1024; // 32 KB (text + voiceId)
 const XAI_VOICES = new Set(["ara", "eve", "rex", "sal", "leo"]);
 
+interface SpeakRequest {
+  text: string;
+  voiceId?: string;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  const corsConfig = getCorsConfig();
+  const origin = String(req.headers.origin || "");
+
+  if (handlePreflight(req, res, corsConfig)) return;
+  applyCorsHeaders(res, corsConfig, origin);
+
+  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
+    return res.status(413).json({ error: "Request body too large." });
   }
+
   if (!(await guard(req, res, "speak"))) return;
 
   if (req.method !== "POST") {
@@ -20,13 +34,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
-  try {
-    const { text, voiceId } = req.body as { text: string; voiceId: string };
-    if (!text) {
-      return res.status(400).json({ error: "Missing text parameter." });
-    }
-    const voice = XAI_VOICES.has(String(voiceId).toLowerCase()) ? String(voiceId).toLowerCase() : "ara";
+  const body = validateJsonBody<SpeakRequest>(req.body, (b): b is SpeakRequest => {
+    if (!b || typeof b !== "object") return false;
+    return typeof b.text === "string" && b.text.length > 0 && b.text.length <= 5000;
+  });
 
+  if (!body) {
+    return res.status(400).json({ error: "Missing or invalid text parameter (max 5000 chars)." });
+  }
+
+  const voice = XAI_VOICES.has(String(body.voiceId || "").toLowerCase())
+    ? String(body.voiceId).toLowerCase()
+    : "ara";
+
+  try {
     const response = await fetch("https://api.x.ai/v1/tts", {
       method: "POST",
       headers: {
@@ -34,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        text: text.slice(0, 1200),
+        text: body.text.slice(0, 1200),
         voice_id: voice,
         language: "auto",
       }),

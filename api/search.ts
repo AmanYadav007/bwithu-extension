@@ -1,15 +1,40 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+
+const MAX_BODY_BYTES = 4 * 1024; // 4 KB for query
+
+interface SearchRequest {
+  query: string;
+}
+
+interface SearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  const corsConfig = getCorsConfig();
+  const origin = String(req.headers.origin || "");
+
+  if (handlePreflight(req, res, corsConfig)) return;
+  applyCorsHeaders(res, corsConfig, origin);
+
+  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
+    return res.status(413).json({ error: "Request body too large." });
   }
+
   if (!(await guard(req, res, "search"))) return;
 
-  const query = req.method === "POST" ? req.body?.query : req.query?.query;
-  if (!query) {
-    return res.status(400).json({ error: "Missing query parameter." });
+  const query = req.method === "POST"
+    ? validateJsonBody<SearchRequest>(req.body, (b): b is SearchRequest =>
+        !!b && typeof b === "object" && typeof b.query === "string" && b.query.length > 0 && b.query.length <= 500
+      )?.query
+    : (req.query?.query as string | undefined);
+
+  if (!query || query.length > 500) {
+    return res.status(400).json({ error: "Missing or invalid query parameter (max 500 chars)." });
   }
 
   const braveApiKey = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY;
@@ -17,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (braveApiKey) {
     try {
       const url = new URL("https://api.search.brave.com/res/v1/web/search");
-      url.searchParams.set("q", String(query));
+      url.searchParams.set("q", query);
       url.searchParams.set("count", "5");
       url.searchParams.set("country", "us");
       url.searchParams.set("search_lang", "en");
@@ -52,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
         headers: { Authorization: `Bearer ${tavilyApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: String(query), max_results: 5, search_depth: "basic" }),
+        body: JSON.stringify({ query, max_results: 5, search_depth: "basic" }),
       });
       if (response.ok) {
         const data = (await response.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
@@ -70,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Last resort: DuckDuckGo HTML scrape (free, but often 403s from Vercel IPs).
   try {
-    const results = await scrapeDuckDuckGo(String(query));
+    const results = await scrapeDuckDuckGo(query);
     return res.status(200).json({ web: { results } });
   } catch {
     // Return empty results rather than an error so B can still answer from what it knows.
@@ -78,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function scrapeDuckDuckGo(query: string) {
+async function scrapeDuckDuckGo(query: string): Promise<SearchResult[]> {
   const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -92,7 +117,7 @@ async function scrapeDuckDuckGo(query: string) {
   }
 
   const html = await response.text();
-  const results: Array<{ title: string; url: string; description: string }> = [];
+  const results: SearchResult[] = [];
 
   const resultBlocks = html.split('class="result__body"');
   for (let i = 1; i < resultBlocks.length && results.length < 5; i++) {
@@ -131,11 +156,11 @@ async function scrapeDuckDuckGo(query: string) {
 function stripHtmlTags(text: string) {
   return text
     .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
+    .replace(/&/g, "&")
+    .replace(/"/g, '"')
+    .replace(/'/g, "'")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -1,10 +1,28 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { guard } from "./_guard";
+import { getCorsConfig, handlePreflight, applyCorsHeaders, validateRequestSize, validateJsonBody } from "./_cors";
+
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB
+const ALLOWED_MODELS = new Set(["grok-4.3", "grok-4-fast-non-reasoning", "grok-3-mini"]);
+
+interface ChatRequest {
+  model?: string;
+  max_tokens?: number;
+  messages?: Array<{ role: string; content: string }>;
+  [key: string]: unknown;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  const corsConfig = getCorsConfig();
+  const origin = String(req.headers.origin || "");
+
+  if (handlePreflight(req, res, corsConfig)) return;
+  applyCorsHeaders(res, corsConfig, origin);
+
+  if (!validateRequestSize(req, MAX_BODY_BYTES)) {
+    return res.status(413).json({ error: "Request body too large." });
   }
+
   if (!(await guard(req, res, "chat"))) return;
 
   if (req.method !== "POST") {
@@ -18,6 +36,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .json({ error: "xAI API key not configured on BWithU proxy server." });
   }
 
+  const body = validateJsonBody<ChatRequest>(req.body, (b): b is ChatRequest => {
+    if (!b || typeof b !== "object") return false;
+    const msg = b.messages;
+    return !msg || Array.isArray(msg);
+  });
+
+  if (!body) {
+    return res.status(400).json({ error: "Invalid request body." });
+  }
+
   try {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
@@ -25,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(sanitizeChatBody(req.body)),
+      body: JSON.stringify(sanitizeChatBody(body)),
     });
 
     if (!response.ok) {
@@ -44,10 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-const ALLOWED_MODELS = new Set(["grok-4.3", "grok-4-fast-non-reasoning", "grok-3-mini"]);
-
-// Don't let the public proxy be used as a free, unlimited Grok endpoint.
-function sanitizeChatBody(body: Record<string, unknown> = {}) {
+function sanitizeChatBody(body: ChatRequest) {
   const model = typeof body.model === "string" && ALLOWED_MODELS.has(body.model) ? body.model : "grok-4.3";
   const maxTokens = Math.min(Number(body.max_tokens) || 700, 900);
   const messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
