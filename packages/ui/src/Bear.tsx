@@ -1,20 +1,20 @@
 import { animate, motion, useMotionValue, AnimatePresence } from "framer-motion";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import GLBCharacter from "./GLBCharacter";
-import OrbCharacter from "./OrbCharacter";
-import { FittedPixelCompanion } from "./PixelCompanion";
-import SpritePlayer from "./SpritePlayer";
+import SvgCompanion from "./SvgCompanion";
+import { mapBearStateToSvgState } from "./svgCompanion/animationController";
 import SpeechBubble from "./SpeechBubble";
 import InfoDisplay from "./InfoDisplay";
-import PixelDisplay from "./PixelDisplay";
-import { animationConfigs, INTRO_TEXT } from "@bwithu/shared";
+import { INTRO_TEXT } from "@bwithu/shared";
 import type { BearState, BearMood, BearPosition, BwithuSettings, BrowserAction } from "@bwithu/shared";
 import { loadBearPosition, saveBearPosition } from "@bwithu/shared";
 import { playClickPop } from "./sounds";
 
 const SIZE = 320;
 const DEFAULT_MARGIN = 40;
+const DEFAULT_MODEL = "model.glb";
+const DEFAULT_SVG_ARTWORK = "characters/male/character.svg";
 
 interface ChromeLike {
   runtime?: {
@@ -124,7 +124,6 @@ export default function Bear({
   onCloseDisplay,
   onSpawnComplete,
   onIntroComplete,
-  onLoopComplete,
   onRequestWave,
   onOpenPanel,
   onDragReaction,
@@ -154,8 +153,12 @@ export default function Bear({
   const [reactions, setReactions] = useState<{ id: number; char: string; x: number }[]>([]);
   const hasDraggedRef = useRef(false);
   const wanderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pixelAvatar = settings.companionAvatar;
-  const useGlbRenderer = !pixelAvatar && settings.characterRenderer === "glb" && !glbUnavailable;
+
+  // v2 renderers: the rigged GLB character by default; the layered SVG as an
+  // explicit choice or a safe fallback when the model fails to load. Legacy
+  // stored values ("orb" / "sprite") resolve to the GLB renderer.
+  const useSvg = settings.characterRenderer === "svg";
+  const useGlb = !useSvg && !glbUnavailable;
 
   const triggerReaction = useCallback((char: string) => {
     const id = Date.now() + Math.random();
@@ -212,10 +215,10 @@ export default function Bear({
   }, [x, y, isSidePanel]);
 
   useEffect(() => {
-    if (!useGlbRenderer || state !== "spawning") return undefined;
+    if (!useGlb || state !== "spawning") return undefined;
     const timer = setTimeout(onSpawnComplete, 1180);
     return () => clearTimeout(timer);
-  }, [onSpawnComplete, state, useGlbRenderer]);
+  }, [onSpawnComplete, state, useGlb]);
 
   useEffect(() => {
     if (isSidePanel || !positionReady || panelOpen || state !== "idle") return;
@@ -224,11 +227,11 @@ export default function Bear({
       const current = { x: x.get(), y: y.get() };
       const next = nextWanderPosition(current, settings.wanderIntensity);
       setFacing(next.x >= current.x ? 1 : -1);
-      
+
       setIsWandering(true);
       const animationX = animate(x, next.x, { type: "spring", stiffness: 70, damping: 18, mass: 0.9 });
       const animationY = animate(y, next.y, { type: "spring", stiffness: 90, damping: 20, mass: 1 });
-      
+
       Promise.all([animationX, animationY]).then(() => {
         setIsWandering(false);
       });
@@ -242,13 +245,6 @@ export default function Bear({
   }, [panelOpen, positionReady, settings.wanderIntensity, state, x, y, isSidePanel]);
 
   const animationState = state === "hidden" ? "idle" : (isWandering && state === "idle" ? "walk" : state);
-  const config = animationConfigs[animationState] ?? animationConfigs.idle;
-
-  const handleAnimationComplete = useMemo(() => {
-    if (state === "spawning") return onSpawnComplete;
-    if (config.loop) return undefined;
-    return onLoopComplete;
-  }, [config.loop, onLoopComplete, onSpawnComplete, state]);
 
   const handlePointerDown = useCallback(() => {
     hasDraggedRef.current = false;
@@ -300,8 +296,8 @@ export default function Bear({
         left: isSidePanel ? "auto" : 0,
         top: isSidePanel ? "auto" : 0,
         margin: isSidePanel ? "0 auto" : undefined,
-        width: isSidePanel ? (pixelAvatar ? "100%" : panelSize) : SIZE,
-        height: isSidePanel ? (pixelAvatar ? "100%" : panelSize) : SIZE,
+        width: isSidePanel ? panelSize : SIZE,
+        height: isSidePanel ? panelSize : SIZE,
         cursor: isSidePanel ? "default" : "grab",
         pointerEvents: "auto",
         userSelect: "none",
@@ -310,9 +306,9 @@ export default function Bear({
       }}
     >
       <motion.div
-        className={["bwithu-bear-stage", `bwithu-bear-stage--${state}`, `bwithu-bear-stage--mood-${mood}`, pixelAvatar ? "bwithu-bear-stage--pixel" : ""].join(" ")}
-        // Pixel art moves in whole-pixel steps inside PixelCompanion; rotating or squashing it here would blur it.
-        animate={pixelAvatar ? { y: 0, rotate: 0, scaleX: 1, scaleY: 1 } : {
+        className={["bwithu-bear-stage", `bwithu-bear-stage--${state}`, `bwithu-bear-stage--mood-${mood}`].join(" ")}
+        // The SVG companion animates itself internally; never transform it here.
+        animate={useSvg ? { y: 0, rotate: 0, scaleX: 1, scaleY: 1 } : {
           y: state === "idle" || state === "curious" || state === "sleep" || state === "sleepy" ? [0, -5, 0] : 0,
           rotate:
             state === "idle"
@@ -322,7 +318,7 @@ export default function Bear({
                 : state === "drag"
                   ? [0, 4, -3, 0]
                   : 0,
-          scaleX: useGlbRenderer ? 1 : facing,
+          scaleX: useGlb ? 1 : facing,
           scaleY: state === "idle" || state === "listen" || state === "sleepy" ? [1, 0.965, 1] : 1,
         }}
         transition={{
@@ -406,23 +402,10 @@ export default function Bear({
           const activeDisplay = display || (pendingAction ? {
             kind: "confirmation" as const,
             title: "Action Confirmation",
-            content: describeAction(pendingAction, settings.companionName || "Bumi"),
+            content: describeAction(pendingAction, settings.companionName || "your companion"),
           } : null);
 
           if (!activeDisplay) return null;
-
-          if (pixelAvatar) {
-            return (
-              <PixelDisplay
-                key={activeDisplay.content}
-                display={activeDisplay}
-                onClose={onCloseDisplay || (() => {})}
-                onConfirmAction={onConfirmAction}
-                onCancelAction={onCancelAction}
-                onSelectTab={onSelectTab}
-              />
-            );
-          }
 
           return (
             <InfoDisplay
@@ -437,19 +420,9 @@ export default function Bear({
           );
         })()}
         {controls}
-        {pixelAvatar ? (
-          <FittedPixelCompanion
-            avatar={pixelAvatar}
-            state={animationState}
-            mood={mood}
-            speechText={speechText}
-            lookAtDisplay={Boolean(display || pendingAction)}
-          />
-        ) : settings.characterRenderer === "orb" ? (
-          <OrbCharacter state={animationState} size={isSidePanel ? panelSize : SIZE} />
-        ) : useGlbRenderer ? (
+        {useGlb ? (
           <GLBCharacter
-            modelSrc={resolveAsset(settings.characterModelUrl || "result.glb")}
+            modelSrc={resolveAsset(settings.characterModelUrl || DEFAULT_MODEL)}
             state={animationState}
             mood={mood}
             facing={facing}
@@ -458,21 +431,9 @@ export default function Bear({
             onLoadError={() => setGlbUnavailable(true)}
           />
         ) : (
-          <SpritePlayer
-            key={animationState}
-            imageSrc={resolveAsset(config.imageSrc)}
-            frameWidth={SIZE}
-            frameHeight={SIZE}
-            frameCount={config.frameCount}
-            fps={config.fps}
-            loop={config.loop}
-            onComplete={handleAnimationComplete}
-            style={{
-              width: SIZE,
-              height: SIZE,
-              backgroundSize: `${SIZE * config.frameCount}px ${SIZE}px`,
-              filter: "drop-shadow(0 10px 18px rgba(48, 31, 18, 0.24))",
-            }}
+          <SvgCompanion
+            src={resolveAsset(settings.characterArtworkUrl || DEFAULT_SVG_ARTWORK)}
+            state={mapBearStateToSvgState(animationState)}
           />
         )}
       </motion.div>

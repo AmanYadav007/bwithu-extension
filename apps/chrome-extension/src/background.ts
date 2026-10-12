@@ -90,7 +90,7 @@ chromeApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   handleMessage(message)
     .then((data) => sendResponse({ ok: true, data }))
-    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "B hit a browser snag." }));
+    .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "Your companion hit a browser snag." }));
 
   return true;
 });
@@ -110,7 +110,7 @@ async function handleMessage(message: RuntimeMessage) {
     case "BWITHU_GET_BROWSER_CONTEXT":
       return collectBrowserContext(message.currentPageContext);
     default:
-      throw new Error("B does not know that message yet.");
+      throw new Error("Your companion does not know that message yet.");
   }
 }
 
@@ -260,7 +260,7 @@ function buildGoogleCalendarUrl(payload: Record<string, string>) {
   const url = new URL("https://calendar.google.com/calendar/render");
   url.searchParams.set("action", "TEMPLATE");
   url.searchParams.set("text", payload.title || "Call");
-  url.searchParams.set("details", payload.description || "Scheduled with B from BwithU.");
+  url.searchParams.set("details", payload.description || "Scheduled with your BwithU companion.");
   url.searchParams.set("dates", `${toCalendarDate(payload.start)}/${toCalendarDate(payload.end)}`);
   const attendees = parseAttendees(payload.attendees).map((attendee) => attendee.email).join(",");
   if (attendees) url.searchParams.set("add", attendees);

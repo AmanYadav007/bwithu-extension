@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const chrome: any;
-import { Bear, CompanionPicker, PIXEL_COMPANIONS, PixelPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
+import { CompanionPanel, GLBCharacter, InfoDisplay, SvgCompanion, mapBearStateToSvgState, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
+
+function resolveAsset(filename: string): string {
+  try {
+    return (
+      (globalThis as { chrome?: { runtime?: { getURL?: (name: string) => string } } }).chrome?.runtime?.getURL?.(filename) ??
+      filename
+    );
+  } catch {
+    return filename;
+  }
+}
 import {
   useBearStore,
   nextBehaviorState,
@@ -11,10 +22,9 @@ import {
   saveSettings,
   loadMessages,
   saveMessages,
-  resetBearPosition,
   DEFAULT_SETTINGS,
 } from "@bwithu/shared";
-import type { BearState, BehaviorEvent, BrowserAction, BrainReply, CompanionAvatar, ConversationTurn, BwithuSettings } from "@bwithu/shared";
+import type { BearState, BehaviorEvent, BrowserAction, BrainReply, ConversationTurn, BwithuSettings } from "@bwithu/shared";
 import { getBrowserContext, runBrowserAction, sendTextMessage, speakText, transcribeAudio } from "./brainClient";
 import { getActivePageContext } from "./pageContext";
 
@@ -117,7 +127,6 @@ interface AppProps {
 
 export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [bearState, setBearState] = useState<BearState>("hidden");
-  const [showIntro, setShowIntro] = useState(false);
   const [speechText, setSpeechText] = useState("");
   const [settings, setSettings] = useState<BwithuSettings>(DEFAULT_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -133,25 +142,11 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   const [activeDisplay, setActiveDisplay] = useState<BrainReply["display"] | null>(null);
   const [liveCaption, setLiveCaption] = useState("");
   const [assistantCaption, setAssistantCaption] = useState("");
+  const [glbUnavailable, setGlbUnavailable] = useState(false);
 
-  const [viewport, setViewport] = useState({
-    width: typeof window !== "undefined" ? window.innerWidth : 320,
-    height: typeof window !== "undefined" ? window.innerHeight : 600,
-  });
-
-  useEffect(() => {
-    function handleResize() {
-      setViewport({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    }
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const introFinishedRef = useRef(false);
+  const spawnDoneRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const realtimeVoiceRef = useRef<RealtimeVoiceSession | null>(null);
@@ -308,7 +303,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       if (!enabled) {
         clearIdleTimer();
         clearStateTimer();
-        setShowIntro(false);
         setSpeechText("");
         setLiveCaption("");
         setAssistantCaption("");
@@ -319,8 +313,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         return;
       }
 
-      introFinishedRef.current = false;
-      setShowIntro(false);
       setSpeechText("");
       setAssistantCaption("");
       setShowChatPanel(false);
@@ -329,9 +321,18 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         playSpawnChime();
         playTinySparkle();
       }
+      spawnDoneRef.current = window.setTimeout(() => {
+        setBearState((current) => (current === "spawning" ? "idle" : current));
+      }, 1400);
     }, 0);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (spawnDoneRef.current) {
+        clearTimeout(spawnDoneRef.current);
+        spawnDoneRef.current = null;
+      }
+    };
   }, [clearIdleTimer, clearStateTimer, enabled, settings.soundEnabled]);
 
   useEffect(() => {
@@ -343,18 +344,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
   useEffect(() => {
     bearStateRef.current = bearState;
   }, [bearState]);
-
-  // Mirror B's state to the floating orb on web pages (it listens to storage changes).
-  useEffect(() => {
-    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
-    void chrome.storage.local.set({ "bwithu.liveState": bearState });
-  }, [bearState]);
-  useEffect(() => {
-    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
-    const reset = () => void chrome.storage.local.set({ "bwithu.liveState": "idle" });
-    window.addEventListener("pagehide", reset);
-    return () => window.removeEventListener("pagehide", reset);
-  }, []);
 
   useEffect(() => {
     function reactToScroll() {
@@ -403,40 +392,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       clearStateTimer();
       setBearState("talk");
     } catch {
-      setStatus(`${settings.companionName || "B"} could not speak this time, but heard you.`);
+      setStatus(`${settings.companionName || "Your companion"} could not speak this time, but heard you.`);
     }
   }, [clearStateTimer, settings]);
 
-  const handleSpawnComplete = useCallback(() => {
-    setBearState("intro");
-    setShowIntro(true);
-    if (settings.soundEnabled) playTinySparkle();
-    
-    const introText = settings.companionName
-      ? `Hi. I'm ${settings.companionName}. This is my first day here.`
-      : "Hi! I don't have a name yet. What would you like to call me?";
-    setSpeechText(introText);
-    
-    if (settings.voiceEnabled && (settings.apiKey || settings.proxyUrl || settings.openAiKey)) {
-      void playVoiceReply(introText);
-    }
-  }, [playVoiceReply, settings.apiKey, settings.openAiKey, settings.proxyUrl, settings.soundEnabled, settings.voiceEnabled, settings.companionName]);
-
-  const handleIntroComplete = useCallback(() => {
-    if (introFinishedRef.current) return;
-    introFinishedRef.current = true;
-    setShowIntro(false);
-    setBearState("wave");
-  }, []);
-
-  useEffect(() => {
-    if (!showIntro || !speechText) return undefined;
-    const timer = window.setTimeout(handleIntroComplete, Math.min(5200, Math.max(2200, speechText.length * 38)));
-    return () => window.clearTimeout(timer);
-  }, [handleIntroComplete, showIntro, speechText]);
-
   const runCommandDiagnostics = useCallback(async () => {
-    const name = settings.companionName || "B";
+    const name = settings.companionName || "Your companion";
     console.log(`🛠️ Starting ${name} Command Diagnostics Test Suite...`);
     const tests = [
       { cmd: "What is this page about?", desc: "Test page context extraction" },
@@ -472,10 +433,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     }
     console.log("🛠️ BWithU Diagnostics Completed!");
   }, [settings]);
-
-  const handleLoopComplete = useCallback(() => {
-    setBearState("idle");
-  }, []);
 
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -529,7 +486,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setMessages(nextHistory);
       setAssistantCaption("");
       setSpeechText(needsSearch ? "Let me look that up..." : "Thinking...");
-      setStatus(needsSearch ? `${companionName || "B"} is checking the internet...` : `${companionName || "B"} is thinking...`);
+      setStatus(needsSearch ? `${companionName || "Your companion"} is checking the internet...` : `${companionName || "Your companion"} is thinking...`);
       if (settings.soundEnabled) playThinkingTick();
       dispatchBehavior(needsSearch ? "searchStarted" : "messageStarted");
       setActiveDisplay(null); // Clear previous TV screen details
@@ -576,7 +533,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setPendingAction(reply.type === "browser_action" && reply.action && reply.requiresConfirmation ? reply.action : null);
         setStatus(
           reply.requiresConfirmation
-            ? "B needs your confirmation."
+            ? "Your companion needs your confirmation."
             : voiceError
               ? `I couldn't speak that out loud (${voiceError}).`
               : "",
@@ -746,7 +703,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         }
 
         if (caption) {
-          setStatus("B heard you.");
+          setStatus("Your companion heard you.");
           setLiveCaption(caption);
           void handleSendMessageRef.current?.(caption);
           return;
@@ -755,12 +712,12 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
         setStatus("Catching your words...");
         void transcribeAudio(blob, settings)
           .then((text) => {
-            setStatus(text ? "B heard you." : "B did not catch that.");
+            setStatus(text ? "Your companion heard you." : "Your companion did not catch that.");
             setLiveCaption(text);
             if (text) void handleSendMessageRef.current?.(text);
           })
           .catch((error) => {
-            setStatus(error instanceof Error ? error.message : "B could not transcribe that.");
+            setStatus(error instanceof Error ? error.message : "Your companion could not transcribe that.");
             setSpeechText("I could not catch that. Try again?");
           });
       };
@@ -874,7 +831,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
 
   const handleConfirmAction = useCallback(async () => {
     if (!pendingAction) return;
-    setStatus("B is doing it...");
+    setStatus("Your companion is doing it...");
     if (settings.soundEnabled) playClickPop();
     try {
       const result = await runBrowserAction(pendingAction);
@@ -882,7 +839,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
       setSpeechText(result);
       if (pendingAction.kind === "hide_bear") onRequestHide?.();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "B could not complete that action.";
+      const message = error instanceof Error ? error.message : "Your companion could not complete that action.";
       setStatus(message);
       setSpeechText(message);
     } finally {
@@ -912,7 +869,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     speechText ||
     [...messages].reverse().find((message) => message.role === "assistant")?.content ||
     "";
-  const companionName = settings.companionName || "B";
+  const companionName = settings.companionName || "Your companion";
   const liveStateText = callStateLabel(bearState, status, isRecording);
 
   const sendCallDraft = useCallback(() => {
@@ -927,64 +884,55 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
     void handleSendMessage(text);
   }, [handleSendMessage]);
 
-  const chooseCompanion = useCallback((avatar: CompanionAvatar) => {
-    const nextSettings = { ...settings, companionAvatar: avatar, voiceId: PIXEL_COMPANIONS[avatar].voiceId };
-    setSettings(nextSettings);
-    void saveSettings(nextSettings);
-    setBearState("spawning");
-    if (settings.soundEnabled) playSpawnChime();
-    if (!settings.onboardingCompleted) setShowChatPanel(true);
-  }, [settings]);
-
-  if (!settingsReady || !settings.companionAvatar) {
-    return (
-      <div className="bwithu-sidepanel-layout bwithu-pixel-world bwithu-pixel-world--picker">
-        {settingsReady && <CompanionPicker onChoose={chooseCompanion} />}
-      </div>
-    );
+  if (!settingsReady) {
+    return <div className="bwithu-sidepanel-layout bwithu-companion-app bwithu-companion-app--picker" />;
   }
 
   return (
-    <div className="bwithu-sidepanel-layout bwithu-pixel-world">
+    <div className="bwithu-sidepanel-layout bwithu-companion-app">
       <header className="bwithu-call-header">
         <div>
           <span className="bwithu-call-header__eyebrow">BwithU</span>
           <strong>{companionName} Call</strong>
         </div>
-        <span className={`bwithu-call-header__status bwithu-call-header__status--${mood}`}>
+        <span className={`bwithu-call-header__status bwithu-call-header__status--${mood} bwithu-call-header__status--${bearState}`}>
+          <i aria-hidden="true" />
           {liveStateText}
         </span>
       </header>
 
-      <div className={`bwithu-bear-area bwithu-bear-area--mood-${mood}`}>
-        {enabled && bearState !== "hidden" && (
-          <Bear
-            key="b"
-            state={bearState}
-            showIntro={showIntro}
-            speechText={speechText}
-            settings={settings}
-            mood={mood}
-            panelOpen={showChatPanel}
+      <main className={`bwithu-companion-stage bwithu-companion-stage--${bearState}`} aria-label={`${companionName} call`}>
+        <div className="bwithu-companion-stage__atmosphere" aria-hidden="true" />
+        <div className="bwithu-companion-stage__portrait-frame">
+          {glbUnavailable ? (
+            <SvgCompanion
+              src={resolveAsset(settings.characterArtworkUrl || "characters/male/character.svg")}
+              state={mapBearStateToSvgState(bearState)}
+            />
+          ) : (
+            <GLBCharacter
+              modelSrc={resolveAsset(settings.characterModelUrl || "model.glb")}
+              state={bearState}
+              mood={mood}
+              facing={1}
+              width={264}
+              height={334}
+              onLoadError={() => setGlbUnavailable(true)}
+            />
+          )}
+        </div>
+        <div className="bwithu-companion-stage__caption" aria-live="polite">
+          <span>{liveStateText}</span>
+          <strong>{isRecording ? "Tap the call button to end" : "Your companion is ready when you are"}</strong>
+        </div>
+        {activeDisplay && !showChatPanel && (
+          <InfoDisplay
             display={activeDisplay}
-            pendingAction={pendingAction}
-            onCloseDisplay={() => setActiveDisplay(null)}
+            onClose={() => setActiveDisplay(null)}
+            position="center"
             onConfirmAction={handleConfirmAction}
             onCancelAction={() => setPendingAction(null)}
             onSelectTab={handleSelectTab}
-            isRecording={isRecording}
-            onToggleRecording={handleMicButtonClick}
-            immediateSpeech={isRecording || voiceDialogueActive}
-            onSpawnComplete={handleSpawnComplete}
-            onIntroComplete={handleIntroComplete}
-            onLoopComplete={handleLoopComplete}
-            onRequestWave={() => dispatchBehavior("clicked")}
-            onOpenPanel={() => setShowChatPanel(true)}
-            onDragReaction={() => dispatchBehavior("dragged")}
-            onHoverReaction={() => dispatchBehavior("hovered")}
-            isSidePanel={true}
-            sidePanelWidth={viewport.width}
-            sidePanelHeight={viewport.height}
           />
         )}
         {!showChatPanel && (latestAssistantMessage || latestUserMessage) && (
@@ -1004,11 +952,11 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             )}
           </div>
         )}
-      </div>
+      </main>
 
       {/* Chat panel */}
       {showChatPanel && (
-        <PixelPanel
+        <CompanionPanel
           settings={settings}
           messages={messages}
           pendingAction={pendingAction}
@@ -1033,10 +981,6 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
           onSendMessage={handleSendMessage}
           onConfirmAction={handleConfirmAction}
           onCancelAction={() => setPendingAction(null)}
-          onResetPosition={async () => {
-            await resetBearPosition();
-            setStatus("Position reset!");
-          }}
           onRequestMicAccess={requestMicrophoneAccess}
           onSettingsOpenChange={setPanelSettingsOpen}
           onClose={() => {
@@ -1058,9 +1002,20 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             type="button"
             className={`bwithu-call-control bwithu-call-control--mic${isRecording ? " bwithu-call-control--active" : ""}`}
             onClick={handleMicButtonClick}
-            title={isRecording ? "Stop listening" : "Talk to B"}
+            title={isRecording ? "End live voice" : `Talk to ${companionName}`}
+            aria-label={isRecording ? "End live voice" : `Talk to ${companionName}`}
+            aria-pressed={isRecording}
           >
-            🎙️
+            {isRecording ? "■" : "●"}
+          </button>
+          <button
+            type="button"
+            className="bwithu-call-control bwithu-call-control--chat"
+            onClick={() => setShowChatPanel(true)}
+            title="Let's chat by text"
+            aria-label={`Open text chat with ${companionName}`}
+          >
+            💬
           </button>
           <input
             value={callDraft}
@@ -1068,7 +1023,7 @@ export default function App({ enabled = true, onRequestHide }: AppProps) {
             placeholder={`Message ${companionName}`}
             aria-label={`Message ${companionName}`}
           />
-          <button type="submit" className="bwithu-call-control" title="Send message">➤</button>
+          <button type="submit" className="bwithu-call-control" title="Send message" aria-label="Send message">➤</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("Read this page")} title="Read page">📄</button>
           <button type="button" className="bwithu-call-control" onClick={() => sendCallCommand("What tabs are open?")} title="Tabs">▦</button>
           <button

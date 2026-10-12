@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bear, PixelPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
+import { Bear, CompanionPanel, playClickPop, playHappyChirp, playListenStart, playSpawnChime, playThinkingTick, playTinySparkle } from "@bwithu/ui";
 import {
   useBearStore,
   nextBehaviorState,
@@ -747,7 +747,7 @@ export default function App() {
       </div>
 
       {showChatPanel && (
-        <PixelPanel
+        <CompanionPanel
           settings={settings}
           messages={messages}
           pendingAction={pendingAction}

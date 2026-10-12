@@ -3,25 +3,21 @@ export interface BearPosition {
   y: number;
 }
 
-export type CompanionAvatar = "male" | "female";
-
 export interface BwithuSettings {
   apiKey: string;
   openAiKey: string;
   braveApiKey: string;
   googleClientId: string;
-  characterRenderer: "orb" | "glb" | "sprite";
-  /** Show the small floating orb on web pages. */
-  floatingOrb: boolean;
+  characterRenderer: "glb" | "svg";
   characterModelUrl: string;
+  /** Local layered-SVG artwork path for the "svg" renderer. */
+  characterArtworkUrl: string;
   voiceId: string;
   soundEnabled: boolean;
   voiceEnabled: boolean;
   wanderIntensity: "calm" | "curious" | "adventurous";
   proxyUrl?: string;
   companionName?: string;
-  /** Pixel character picked on first run; unset until the user chooses one. */
-  companionAvatar?: CompanionAvatar;
   memory?: string;
   onboardingCompleted: boolean;
 }
@@ -31,9 +27,10 @@ export const DEFAULT_SETTINGS: BwithuSettings = {
   openAiKey: "",
   braveApiKey: "",
   googleClientId: "",
-  characterRenderer: "orb",
-  floatingOrb: true,
-  characterModelUrl: "",
+  // Render the rigged 3D character by default; the layered SVG is selectable in Settings.
+  characterRenderer: "glb",
+  characterModelUrl: "model.glb",
+  characterArtworkUrl: "",
   voiceId: "coral",
   soundEnabled: true,
   voiceEnabled: true,

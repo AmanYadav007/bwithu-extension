@@ -24,7 +24,7 @@ export async function transcribeAudio(
       body: formData,
     });
 
-    if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
+    if (!response.ok) throw new Error(`Your companion could not transcribe that (${response.status}).`);
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   } else if (settings.apiKey) {
@@ -43,7 +43,7 @@ export async function transcribeAudio(
       body: formData,
     });
 
-    if (!response.ok) throw new Error(`B could not transcribe that (${response.status}).`);
+    if (!response.ok) throw new Error(`Your companion could not transcribe that (${response.status}).`);
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   } else {
@@ -54,7 +54,7 @@ export async function transcribeAudio(
       body: JSON.stringify({ audio, mimeType }),
     });
 
-    if (!response.ok) throw await proxyError(response, "B could not transcribe that via proxy");
+    if (!response.ok) throw await proxyError(response, "Your companion could not transcribe that via proxy");
     const data = (await response.json()) as { text?: string };
     return data.text?.trim() ?? "";
   }
@@ -78,7 +78,7 @@ export async function speakText(
       }),
     });
 
-    if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
+    if (!response.ok) throw new Error(`Your companion could not speak right now (${response.status}).`);
     const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
     const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
     return { bytes, mimeType: contentType };
@@ -96,7 +96,7 @@ export async function speakText(
       }),
     });
 
-    if (!response.ok) throw new Error(`B could not speak right now (${response.status}).`);
+    if (!response.ok) throw new Error(`Your companion could not speak right now (${response.status}).`);
     const contentType = response.headers.get("Content-Type") ?? "audio/mpeg";
     const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
     return { bytes, mimeType: contentType };
@@ -108,7 +108,7 @@ export async function speakText(
       body: JSON.stringify({ text, voiceId: resolveVoice(settings, "xai") }),
     });
 
-    if (!response.ok) throw await proxyError(response, "B could not speak right now via proxy");
+    if (!response.ok) throw await proxyError(response, "Your companion could not speak right now via proxy");
     return response.json() as Promise<{ bytes: number[]; mimeType: string }>;
   }
 }
@@ -168,7 +168,7 @@ export async function createRealtimeSecret(settings: BwithuSettings): Promise<Re
   }
 
   if (!response.ok) {
-    const name = settings.companionName || "B";
+    const name = settings.companionName || "Your companion";
     throw await proxyError(response, `${name} could not start realtime voice`);
   }
   return response.json() as Promise<RealtimeSecret>;
